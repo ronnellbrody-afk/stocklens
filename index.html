@@ -203,4 +203,81 @@ const slV23Footer=document.querySelector('.foot');if(slV23Footer)slV23Footer.tex
 const slV23Settings=document.createElement('div');slV23Settings.className='panel';slV23Settings.innerHTML='<h2>Live scoring methodology · v2.3</h2><p class="muted small">Balanced default: cash/liquidity 25%, debt resilience 25%, profitability and margin trend 25%, cash generation and FCF consistency 25%. Each category uses illustrative rule-based thresholds, not peer-calibrated predictions. Financial-sector companies and currency-mismatched statements are not given an overall score. Demo scoring weights above remain independent.</p><p class="muted small">Annual financial history is requested from your existing Cloudflare Worker. Its five-statement limit and provider coverage determine the available history. No API keys are stored in the browser.</p>';
 $('settings').append(slV23Settings);
 
-</script></body></html>
+</script>
+<script>
+/* StockLens v2.4 — evidence-first valuation and research prompts. No new API endpoints. */
+const slV24Valuation=(a)=>{
+ const p=a.p||{},h=a.history||[], latest=h[0], prior=h[1];
+ const cap=slNum(p.marketCap),price=slNum(p.price),shares=slNum(p.sharesOutstanding);
+ const pe=cap!==null&&cap>0&&a.net>0?cap/a.net:null;
+ const fcfYield=cap!==null&&cap>0&&a.fcf!==null?a.fcf/cap*100:null;
+ const earningsYield=pe!==null?100/pe:null;
+ const ev=cap!==null&&a.netDebt!==null?cap+a.netDebt:null;
+ const evEbitda=ev!==null&&ev>0&&a.ebitda>0?ev/a.ebitda:null;
+ const capexIntensity=slDiv(Math.abs(a.capex),a.ocf);
+ const priorCapex=prior?slDiv(Math.abs(prior.capex),prior.ocf):null;
+ const fcfGrowth=h.length>1&&Number.isFinite(latest?.fcf)&&Number.isFinite(prior?.fcf)&&prior.fcf>0?(latest.fcf/prior.fcf-1)*100:null;
+ const curr=latest?.currency||a.i?.reportedCurrency||null;
+ const profileCurrency=p.currency||null;
+ const mismatch=!!(curr&&profileCurrency&&curr!==profileCurrency);
+ const compatible=!a.financial&&!a.currencyMismatch&&!mismatch;
+ return {cap,price,pe,fcfYield,earningsYield,ev,evEbitda,capexIntensity,priorCapex,fcfGrowth,curr,profileCurrency,mismatch,compatible};
+};
+const slV24Research=(a,v)=>{
+ const prompts=[];
+ const add=(kind,why,question)=>prompts.push({kind,why,question});
+ if(Number.isFinite(v.capexIntensity)&&v.capexIntensity>.5)add('Capital intensity','Capital expenditure exceeds half of operating cash flow.','Is this spending maintenance or growth investment, and what returns are expected?');
+ if(Number.isFinite(v.capexIntensity)&&Number.isFinite(v.priorCapex)&&v.capexIntensity-v.priorCapex>.1)add('Rising reinvestment','Capital spending is taking a larger share of operating cash flow than last year.','When should the additional investment translate into cash returns?');
+ if(Number.isFinite(a.marginTrend)&&a.marginTrend< -2)add('Margin pressure','Operating margin has declined over the available annual history.','Is this temporary investment, weaker pricing power, or structural cost pressure?');
+ if(Number.isFinite(a.marginTrend)&&a.marginTrend>2)add('Margin improvement','Operating margin has improved over the available annual history.','What drove the improvement, and can it persist?');
+ if(Number.isFinite(a.leverage)&&a.leverage>2)add('Balance sheet','Net debt exceeds 2× annual EBITDA.','What are the debt maturities, interest costs and refinancing risks?');
+ if(a.history?.length>1&&Number.isFinite(a.history[0].netDebt)&&Number.isFinite(a.history.at(-1).netDebt)&&a.history[0].netDebt>a.history.at(-1).netDebt)add('Debt trend','Net debt increased across the available annual periods.','Was borrowing used for productive investment, acquisitions, or to fund distributions?');
+ if(a.fcfObserved>=3&&a.positiveYears<a.fcfObserved)add('Cash-flow consistency','Free cash flow was not positive in every observed year.','What explains the negative years, and could they recur?');
+ if(Number.isFinite(v.fcfYield)&&v.fcfYield<2)add('Price sensitivity','Trailing annual FCF yield is below 2% of the profile market capitalisation.','What growth and reinvestment returns would justify the current price?');
+ if(Number.isFinite(v.pe)&&v.pe>35)add('Earnings valuation','Indicative trailing P/E is above 35×.','How sensitive is the investment case to slower earnings growth or multiple compression?');
+ if(Number.isFinite(v.fcfYield)&&v.fcfYield>8)add('Potential value trap','FCF yield looks high relative to the profile market capitalisation.','Is cash flow sustainable, or are profits and capital needs likely to deteriorate?');
+ add('Competitive moat','Financial ratios alone cannot establish a durable competitive advantage.','Review switching costs, customer retention, market share, pricing power and competitors.');
+ add('Primary sources','Provider data can be delayed, restated or mapped differently from filings.','Reconcile these metrics to the latest annual and interim filings, including debt and capex notes.');
+ return prompts.slice(0,8);
+};
+const slV24FormatMultiple=n=>Number.isFinite(n)?n.toFixed(1)+'×':'N/A';
+function slV24Markup(symbol,d){
+ const a=slCompute(d),v=slV24Valuation(a),prompts=slV24Research(a,v);
+ const valAvailable=v.compatible&&Number.isFinite(v.pe)&&Number.isFinite(v.fcfYield);
+ const quality=a.overall===null?'Not scored':a.overall>=75?'Stronger financial profile':a.overall>=50?'Mixed financial profile':'Financial weaknesses';
+ const riskNotes=[];
+ if(a.leverage!==null&&a.leverage>3)riskNotes.push('Elevated net debt / EBITDA');
+ if(a.fcf!==null&&a.fcf<0)riskNotes.push('Negative annual free cash flow');
+ if(Number.isFinite(v.capexIntensity)&&v.capexIntensity>.5)riskNotes.push('High capital spending relative to operating cash flow');
+ if(a.history?.length<3)riskNotes.push('Limited annual history');
+ if(v.mismatch)riskNotes.push('Profile and financial statement currencies differ');
+ const riskText=riskNotes.length?riskNotes.join('; '):'No selected numerical flags; qualitative risks still require review';
+ const caution=v.mismatch?'Currency mismatch — valuation multiples withheld':!v.compatible?'Valuation comparisons withheld for incompatible data / sector':'Market capitalisation is from the provider profile; earnings and FCF are annual statement figures. Their timestamps may differ.';
+ const valStat=(label,value,sub='')=>slStat(label,value,sub);
+ const pe=v.compatible?slV24FormatMultiple(v.pe):'N/A';
+ const evEbitda=v.compatible?slV24FormatMultiple(v.evEbitda):'N/A';
+ const yieldValue=v.compatible?slPct(v.fcfYield):'N/A';
+ const earnYield=v.compatible?slPct(v.earningsYield):'N/A';
+ const cards=`${valStat('P/E · indicative',pe,'Profile market cap / latest annual net income')}${valStat('EV / EBITDA · indicative',evEbitda,'Market cap + net debt / annual EBITDA; simplified EV')}${valStat('Free cash flow yield',yieldValue,'Latest annual FCF / profile market cap')}${valStat('Earnings yield',earnYield,'Inverse of indicative P/E')}`;
+ const checks=prompts.map((x,i)=>`<div class="sl24-check"><div class="small amber" style="font-weight:700">${safe(x.kind)}</div><div class="muted small" style="margin:5px 0">${safe(x.why)}</div><label><input type="checkbox" data-research-check="${i}"> ${safe(x.question)}</label></div>`).join('');
+ return `<div class="panel" id="sl24Valuation"><h2>Valuation intelligence · v2.4</h2><p class="muted small">Valuation is assessed separately from business quality. These are trailing, indicative ratios — not a fair-value estimate or a buy/sell rating.</p><div class="live-grid">${cards}</div><p class="live-note">${safe(caution)} ${safe(v.curr||'Statement currency unknown')} statements; ${safe(v.profileCurrency||'profile currency unknown')} profile currency. EV excludes non-debt enterprise-value adjustments. Compare with peers and historical ranges before drawing conclusions.</p><div class="notice"><b>Interpretation:</b> A low multiple is not automatically cheap; a high multiple is not automatically expensive. Growth, reinvestment, accounting quality and the cost of capital matter.</div></div>
+ <div class="panel"><h2>Cash-flow sustainability</h2><div class="live-grid">${valStat('Capex / operating cash flow',Number.isFinite(v.capexIntensity)?slPct(v.capexIntensity*100):'N/A','Absolute annual capex divided by positive operating cash flow')}${valStat('Prior-year capex / OCF',Number.isFinite(v.priorCapex)?slPct(v.priorCapex*100):'N/A')}${valStat('Latest FCF change',Number.isFinite(v.fcfGrowth)?slV23Signed(v.fcfGrowth):'N/A','Year-on-year; only if prior FCF was positive')}${valStat('Positive FCF years',a.fcfObserved?`${a.positiveYears} / ${a.fcfObserved}`:'N/A')}</div><p class="live-note">A high capex share can reflect valuable investment or heavy maintenance requirements. These statements cannot distinguish the two reliably.</p></div>
+ <div class="panel"><h2>Investment research summary</h2><div class="metric"><span>Financial quality</span><b>${safe(quality)}</b></div><div class="metric"><span>Valuation evidence</span><b>${valAvailable?'Ratios available':'Incomplete / incompatible'}</b></div><div class="metric"><span>Risks to investigate</span><b>${riskNotes.length} flagged</b></div><p class="muted small">${safe(riskText)}</p><p class="live-note">No automated competitive-moat score: financial statements cannot independently verify switching costs, network effects, pricing power or future resilience.</p></div>
+ <div class="panel"><h2>Personal research checklist</h2><p class="muted small">Questions generated from this company's financial evidence. Tick items as you investigate; checklist state is not saved.</p><div id="sl24Checklist">${checks}</div><div class="actions" style="margin-top:14px"><button class="btn" data-export-research="${safe(symbol)}">Download research notes</button></div><p class="live-note">Source: FMP annual statements and profile; latest matched fiscal period ${safe(a.i.date||'unknown')}. Verify with company filings.</p></div>`;
+}
+const slV24PreviousMarkup=slLiveMarkup;
+slLiveMarkup=function(symbol,d){return slV24PreviousMarkup(symbol,d)+slV24Markup(symbol,d)};
+let slV24Current=null;
+const slV24PreviousAnalyse=analyse;
+analyse=async function(ticker){const symbol=String(ticker||'').trim().toUpperCase();slV24Current=null;await slV24PreviousAnalyse(symbol);if(!DEMO.some(x=>x.ticker===symbol)&&document.getElementById('sl24Valuation')){try{slV24Current={symbol,data:await slLoad(symbol)}}catch(e){}}};
+document.addEventListener('click',e=>{const button=e.target.closest('[data-export-research]');if(!button||!slV24Current||slV24Current.symbol!==button.dataset.exportResearch)return;
+ const {symbol,data}=slV24Current,a=slCompute(data),v=slV24Valuation(a),prompts=slV24Research(a,v);
+ const ticks=[...document.querySelectorAll('[data-research-check]')];
+ const lines=[`StockLens v2.4 — ${symbol} research notes`,`Financial period: ${a.i.date||'unknown'}`,`Source: Financial Modeling Prep (verify against filings)`,`Financial health score: ${a.overall??'N/A'}/100`,`P/E (indicative): ${v.compatible?slV24FormatMultiple(v.pe):'N/A'}`,`EV/EBITDA (indicative): ${v.compatible?slV24FormatMultiple(v.evEbitda):'N/A'}`,`FCF yield: ${v.compatible?slPct(v.fcfYield):'N/A'}`,'','Research questions:',...prompts.map((p,i)=>`${ticks[i]?.checked?'[x]':'[ ]'} ${p.kind}: ${p.question}`),'','For research only; not investment advice. Ratios may combine different timestamps.'];
+ const blob=new Blob([lines.join('\n')],{type:'text/plain'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`stocklens-${symbol}-research.txt`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+});
+const slV24Style=document.createElement('style');slV24Style.textContent='.sl24-check{border-bottom:1px solid #304158;padding:13px 0}.sl24-check:last-child{border:0}.sl24-check label{display:flex;align-items:flex-start;gap:10px;line-height:1.5;font-size:13px;cursor:pointer}.sl24-check input{flex:0 0 auto;margin-top:3px;accent-color:#48c9a1}';document.head.append(slV24Style);
+const slV24Foot=document.querySelector('.foot');if(slV24Foot)slV24Foot.textContent='StockLens v2.4 · FMP live financials · Five-year trends, indicative valuation and research checklist · Not financial advice. Check filings and market data timestamps.';
+const slV24Settings=document.createElement('div');slV24Settings.className='panel';slV24Settings.innerHTML='<h2>Valuation methodology · v2.4</h2><p class="muted small">P/E = profile market capitalisation / latest annual net income. EV/EBITDA = (profile market capitalisation + net debt) / annual EBITDA, excluding minority interests, preferred equity and other EV adjustments. FCF yield = annual free cash flow / profile market capitalisation. These are indicative ratios with potentially unmatched dates. No fair-value model, historical multiple database, sector-relative percentile or moat rating is implied. No new API permissions are required.</p>';$('settings').append(slV24Settings);
+</script>
+</body></html>
