@@ -32,7 +32,7 @@ const sectors=[...new Set(DEMO.map(s=>s.sector))];sectors.forEach(s=>{$('sector'
 </style>
 <script>
 'use strict';
-/* StockLens v2.2: live analysis is intentionally isolated from the original demo model. */
+/* StockLens v2.3: live analysis is intentionally isolated from the original demo model. */
 const SL_API='https://stocklens-api.ronnell-d61.workers.dev/';
 const SL_LIVE_STORE='stocklens-live-watch-v1';
 let slLiveWatch=[];
@@ -100,7 +100,107 @@ output.innerHTML=`<table class="comparetable live-table"><thead><tr><th>Metric</
 const slTop=document.querySelector('.top .tag');if(slTop)slTop.textContent='Research dashboard · Demo + live analysis';
 const slHero=document.querySelector('.hero p');if(slHero)slHero.innerHTML='Screen financial quality, debt, cash generation and valuation. <b>Discover contains fictional examples</b>; Analyse and Compare also support live financial statements via FMP.';
 const slNotice=document.querySelector('.tabs + .notice');if(slNotice)slNotice.innerHTML='<b>DATA MODES:</b> Discover and its scores remain fictional demo data. Enter a real ticker in Analyse or Compare live for FMP financial statements. Experimental financial health scores are not investment advice.';
-const slFoot=document.querySelector('.foot');if(slFoot)slFoot.textContent='StockLens v2.2 · Demo + live financial statements via FMP · Annual data may be delayed or restated · Experimental screening only, not financial advice. Verify filings and prices before investing.';
+const slFoot=document.querySelector('.foot');if(slFoot)slFoot.textContent='StockLens v2.3 · Demo + live financial statements via FMP · Annual data may be delayed or restated · Experimental screening only, not financial advice. Verify filings and prices before investing.';
 const slSettings=document.querySelector('#settings .panel .muted.small');if(slSettings)slSettings.textContent='These six weights control fictional demo-company scores only. Live financial health scores currently use four equally weighted categories; they are not validated predictive models.';
 const slPrivacy=$('settings').querySelectorAll('.panel')[1]?.querySelector('p');if(slPrivacy)slPrivacy.textContent='Demo watchlist and weights, plus a separate live watchlist, are stored in this browser. Export/import currently covers demo settings only. Real company data is fetched from a Cloudflare Worker; your FMP key is never included in this website. The Worker is publicly reachable, so add server-side rate limiting and caching before broad public use.';
+
+/* StockLens v2.3 — aligned annual histories and balanced, evidence-based trend scoring. */
+const slV23Weights={liquidity:25,debt:25,profit:25,cashflow:25};
+const slV23FinancialSector=/bank|insurance|financial services|capital markets|asset management|reit|real estate investment trust/i;
+const slV23Date=x=>typeof x?.date==='string'?x.date:'';
+const slV23Sort=arr=>[...arr].sort((a,b)=>slV23Date(b).localeCompare(slV23Date(a)));
+const slV23Value=(row,fields)=>slFirst(row||{},fields);
+const slV23Median=values=>{const a=values.filter(Number.isFinite).sort((x,y)=>x-y);return a.length?a.length%2?a[(a.length-1)/2]:(a[a.length/2-1]+a[a.length/2])/2:null};
+const slV23Growth=(newer,older,periods)=>Number.isFinite(newer)&&Number.isFinite(older)&&newer>0&&older>0&&periods>0?(Math.pow(newer/older,1/periods)-1)*100:null;
+const slV23Change=(newer,older)=>Number.isFinite(newer)&&Number.isFinite(older)&&older!==0?(newer/Math.abs(older)-1)*100:null;
+const slV23Point=(label,value,extra='')=>`<div class="live-stat"><span>${safe(label)}</span><b>${safe(value)}</b>${extra?`<div class="live-note">${safe(extra)}</div>`:''}</div>`;
+const slV23Signed=n=>Number.isFinite(n)?(n>0?'+':'')+n.toFixed(1)+'%':'N/A';
+const slV23Rating=(x,bounds)=>{if(!Number.isFinite(x))return null;for(let j=0;j<bounds.length;j++)if(x>=bounds[j])return [100,80,60,40,20][j];return 0};
+const slV23Lower=(x,bounds)=>{if(!Number.isFinite(x))return null;for(let j=0;j<bounds.length;j++)if(x<=bounds[j])return [100,80,60,40,20][j];return 0};
+const slV23Mean=arr=>{const v=arr.filter(Number.isFinite);return v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length):null};
+function slV23History(d){
+ const income=slV23Sort(d.incomeHistory||[d.income]);
+ const balance=slV23Sort(d.balanceHistory||[d.balance]);
+ const cashflow=slV23Sort(d.cashflowHistory||[d.cashflow]);
+ const bm=new Map(balance.map(x=>[slV23Date(x),x])),cm=new Map(cashflow.map(x=>[slV23Date(x),x]));
+ return income.filter(i=>bm.has(slV23Date(i))&&cm.has(slV23Date(i))).slice(0,5).map(i=>{
+   const b=bm.get(i.date),c=cm.get(i.date),revenue=slNum(i.revenue),op=slNum(i.operatingIncome),net=slNum(i.netIncome),fcf=slV23Value(c,['freeCashFlow']);
+   const cash=slV23Value(b,['cashAndCashEquivalents','cashAndShortTermInvestments']);
+   const debt=slNum(b.totalDebt),ebitda=slNum(i.ebitda),interest=slNum(i.interestExpense);
+   return {date:i.date,year:i.calendarYear||i.date?.slice(0,4),currency:i.reportedCurrency||b.reportedCurrency||c.reportedCurrency||null,
+    currencies:[i.reportedCurrency,b.reportedCurrency,c.reportedCurrency].filter(Boolean),revenue,op,net,fcf,ocf:slNum(c.operatingCashFlow),capex:slNum(c.capitalExpenditure),cash,debt,
+    netDebt:debt!==null&&cash!==null?debt-cash:null,ebitda,interest,leverage:slDiv(debt!==null&&cash!==null?debt-cash:null,ebitda),
+    opMargin:slDiv(op,revenue),fcfMargin:slDiv(fcf,revenue),currentRatio:slDiv(slNum(b.totalCurrentAssets),slNum(b.totalCurrentLiabilities)),
+    interestCover:interest!==null&&op!==null&&interest!==0?op/Math.abs(interest):null,
+    cashDebt:debt===0&&cash!==null?Infinity:slDiv(cash,debt),fcfConversion:slDiv(fcf,net)};
+ });
+}
+slLoad=async function(symbol){
+ const [profile,income,balance,cashflow]=await Promise.all(['profile','income','balance','cashflow'].map(type=>slGet(symbol,type)));
+ const histories={profile:profile[0],incomeHistory:slV23Sort(income),balanceHistory:slV23Sort(balance),cashflowHistory:slV23Sort(cashflow)};
+ const aligned=slV23History(histories);
+ if(!aligned.length)throw Error('No matching fiscal year across all three statements. No score calculated.');
+ const date=aligned[0].date;
+ return {...histories,income:income.find(x=>x.date===date),balance:balance.find(x=>x.date===date),cashflow:cashflow.find(x=>x.date===date)};
+};
+const slV23OriginalCompute=slCompute;
+slCompute=function(d){
+ const a=slV23OriginalCompute(d),history=slV23History(d),latest=history[0];
+ const currencies=new Set(history.flatMap(x=>x.currencies));
+ const financial=slV23FinancialSector.test(String(a.p.sector||'')+' '+String(a.p.industry||''));
+ const currencyMismatch=currencies.size>1;
+ const revenueGrowth=history.length>=2?slV23Growth(latest.revenue,history[history.length-1].revenue,history.length-1):null;
+ const fcfPositive=history.filter(x=>Number.isFinite(x.fcf)).map(x=>x.fcf>0?1:0);
+ const positiveYears=fcfPositive.reduce((x,y)=>x+y,0);
+ const fcfConsistency=fcfPositive.length>=3?slV23Rating(positiveYears/fcfPositive.length,[1,.8,.6,.4,.2]):null;
+ const margins=history.map(x=>x.opMargin).filter(Number.isFinite);
+ const marginTrend=margins.length>=2?(margins[0]-margins[margins.length-1])*100:null;
+ const trendScore=marginTrend===null?null:slV23Rating(marginTrend,[5,2,0,-3,-7]);
+ // A zero-debt company with positive cash is treated as fully cash-covered.
+ const cashDebt=latest?.cashDebt===Infinity?10:latest?.cashDebt;
+ const liquidity=slV23Mean([slV23Rating(latest?.currentRatio,[2,1.5,1.2,1,.8]),slV23Rating(cashDebt,[2,1,.5,.25,0])]);
+ const leverage=latest?.leverage;
+ const debt=slV23Mean([slV23Lower(leverage,[-1,0,1,2,3]),slV23Rating(latest?.interestCover,[12,8,5,3,1.5])]);
+ const profit=slV23Mean([slV23Rating(latest?.opMargin,[.3,.2,.12,.06,0]),slV23Rating(slDiv(latest?.net,latest?.revenue),[.25,.15,.08,.03,0]),trendScore]);
+ const cashflow=slV23Mean([slV23Rating(latest?.fcfMargin,[.25,.15,.08,.03,0]),slV23Rating(latest?.fcfConversion,[1.2,1,.7,.4,0]),fcfConsistency]);
+ const categories=[['Cash & liquidity',liquidity],['Debt resilience',debt],['Profitability & trend',profit],['Cash generation & consistency',cashflow]];
+ // Do not show an overall score for incompatible accounting or financial institutions.
+ const complete=categories.every(x=>Number.isFinite(x[1]));
+ const overall=!financial&&!currencyMismatch&&complete?Math.round(categories.reduce((sum,x)=>sum+x[1],0)/4):null;
+ return {...a,categories,complete:complete&&!financial&&!currencyMismatch,overall,history,revenueGrowth,marginTrend,positiveYears,fcfObserved:fcfPositive.length,financial,currencyMismatch,currencies:[...currencies]};
+};
+function slV23TrendMarkup(a){
+ const h=a.history||[],first=h[0],last=h[h.length-1];
+ const currency=a.currencies.length===1?a.currencies[0]:'Mixed / unknown';
+ const revenueCagr=h.length>=2?slV23Growth(first.revenue,last.revenue,h.length-1):null;
+ const years=h.length;
+ const fmt=x=>x===null?'N/A':slMoney(x);
+ const fmtPct=x=>x===null?'N/A':slPct(x*100);
+ const row=(label,fn,formatter)=>`<tr><th scope="row">${safe(label)}</th>${h.map(x=>`<td>${safe(formatter(fn(x)))}</td>`).join('')}</tr>`;
+ const warnings=[];
+ if(a.financial)warnings.push('Financial-sector accounting detected: standard corporate ratios are not comparable; overall score withheld.');
+ if(a.currencyMismatch)warnings.push('Financial statements contain differing reported currencies; overall score withheld.');
+ if(years<5)warnings.push(`Only ${years} aligned annual period(s) returned; this is not a complete five-year history.`);
+ if(years>=2&&a.marginTrend!==null&&a.marginTrend< -3)warnings.push('Operating margin has declined by more than 3 percentage points over the available period.');
+ if(years>=2&&Number.isFinite(first.netDebt)&&Number.isFinite(last.netDebt)&&first.netDebt>last.netDebt)warnings.push('Net debt has increased over the available period.');
+ if(a.fcfObserved>=3&&a.positiveYears<a.fcfObserved)warnings.push(`Free cash flow was positive in ${a.positiveYears} of ${a.fcfObserved} observed years.`);
+ return `<div class="panel"><h2>Five-year financial trends</h2><p class="muted small">Up to five annual fiscal periods with matching income, balance sheet and cash flow statement dates. Latest year first. ${years} aligned period(s) available · ${safe(currency)}.</p>
+ <div class="live-grid">${slV23Point('Revenue growth (annualised)',slV23Signed(revenueCagr),years>=2?`${years-1} annual interval(s)`:'At least two years required')}${slV23Point('Operating margin change',Number.isFinite(a.marginTrend)?(a.marginTrend>0?'+':'')+a.marginTrend.toFixed(1)+' pp':'N/A','Percentage-point change, latest vs oldest')}${slV23Point('Positive FCF years',a.fcfObserved?`${a.positiveYears} / ${a.fcfObserved}`:'N/A')}${slV23Point('Net debt change',Number.isFinite(first.netDebt)&&Number.isFinite(last.netDebt)?slMoney(first.netDebt-last.netDebt):'N/A','Latest minus oldest; positive means more net debt')}</div>
+ <div class="scroll"><table class="comparetable live-table"><thead><tr><th>Financial measure</th>${h.map(x=>`<th>${safe(x.year)}</th>`).join('')}</tr></thead><tbody>
+ ${row('Revenue',x=>x.revenue,fmt)}${row('Operating margin',x=>x.opMargin,fmtPct)}${row('Free cash flow',x=>x.fcf,fmt)}${row('FCF / revenue',x=>x.fcfMargin,fmtPct)}${row('Net debt',x=>x.netDebt,fmt)}${row('Net debt / EBITDA',x=>x.leverage,x=>Number.isFinite(x)?x.toFixed(2)+'×':'N/A')}
+ </tbody></table></div><p class="live-note">Growth is calculated only when both endpoints are positive. Financial statements can be restated, and annual results do not indicate interim performance. Cash, debt and valuation require sector-specific interpretation.</p>
+ ${warnings.length?`<div class="notice"><b>Trend and data-quality observations</b><ul style="padding-left:18px;margin:8px 0">${warnings.map(x=>`<li>${safe(x)}</li>`).join('')}</ul></div>`:''}</div>`;
+}
+const slV23OriginalMarkup=slLiveMarkup;
+slLiveMarkup=function(symbol,d){const a=slCompute(d);let html=slV23OriginalMarkup(symbol,d);
+ // Replace the old scoring caveat with an explanation of the trend-aware model.
+ html=html.replace('This is a rules-based, unvalidated screening score using equal weights across four categories. It does not measure competitive moat or predict investment returns. Missing categories prevent an overall score. It is separate from your demo scoring weights.',
+ 'Balanced experimental scoring: 25% each for liquidity, debt, profitability/trend, and cash generation/consistency. The model uses up to five matched annual periods; missing inputs may reduce confidence. Financial firms and currency-mismatched statements receive no overall score. Competitive moat and future returns are not measured. Demo weights remain separate.');
+ if(a.financial||a.currencyMismatch)html=html.replace('Insufficient data</', 'Not comparable</');
+ return html+slV23TrendMarkup(a);
+};
+const slV23Footer=document.querySelector('.foot');if(slV23Footer)slV23Footer.textContent='StockLens v2.3 · Demo + FMP live financials · Trend-aware experimental financial screening · Not financial advice. Annual reports may be delayed or restated; check filings, accounting policies and market prices.';
+const slV23Settings=document.createElement('div');slV23Settings.className='panel';slV23Settings.innerHTML='<h2>Live scoring methodology · v2.3</h2><p class="muted small">Balanced default: cash/liquidity 25%, debt resilience 25%, profitability and margin trend 25%, cash generation and FCF consistency 25%. Each category uses illustrative rule-based thresholds, not peer-calibrated predictions. Financial-sector companies and currency-mismatched statements are not given an overall score. Demo scoring weights above remain independent.</p><p class="muted small">Annual financial history is requested from your existing Cloudflare Worker. Its five-statement limit and provider coverage determine the available history. No API keys are stored in the browser.</p>';
+$('settings').append(slV23Settings);
+
 </script></body></html>
