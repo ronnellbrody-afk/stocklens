@@ -316,4 +316,67 @@ document.addEventListener('click',async e=>{const save=e.target.closest('[data-s
 const sl25Foot=document.querySelector('.foot');if(sl25Foot)sl25Foot.textContent='StockLens v2.5 · Live FMP financials, five-year trends, indicative valuation and saved personal research · Experimental screening, not investment advice.';
 const sl25Settings=document.createElement('div');sl25Settings.className='panel';sl25Settings.innerHTML='<h2>Research storage · v2.5</h2><p class="muted small">Ticker-specific checklists and thesis notes are saved in this browser using localStorage. They are not synchronised across devices and are not included in the original demo settings export. Export each company research report as a backup. No new API endpoints or permissions are needed.</p>';$('settings').append(sl25Settings);
 </script>
+<style>
+.sl26-flag{border:1px solid #354862;border-radius:11px;padding:12px;margin:9px 0;background:#0c1728}.sl26-flag strong{display:block;margin-bottom:5px}.sl26-meta{font-size:12px;color:#a4b4ca;line-height:1.55}.sl26-good{border-left:3px solid #39b98e}.sl26-warn{border-left:3px solid #f5bd68}.sl26-bad{border-left:3px solid #ff828b}.sl26-file{max-width:100%;width:100%;margin-top:9px}
+</style><script>
+/* StockLens v2.6: transparent evidence checks, risk intelligence, and full local research backup. */
+'use strict';
+function sl26Audit(d){
+ const a=slCompute(d),h=a.history||[],latest=h[0],v=slV24Valuation(a),issues=[];
+ const flag=(severity,title,detail)=>issues.push({severity,title,detail});
+ const dates=[d.income?.date,d.balance?.date,d.cashflow?.date];
+ if(dates.some(x=>!x)||new Set(dates).size!==1)flag('bad','Financial statement date mismatch','Income, balance sheet and cash-flow statements do not share the same fiscal date.');
+ if(h.length<5)flag('warn','Incomplete five-year coverage',`Only ${h.length} matching annual periods available.`);
+ if(a.currencyMismatch||v.mismatch)flag('bad','Currency inconsistency','Reported currencies disagree across statements or with the market profile; do not compare indicative valuation ratios.');
+ if(a.financial)flag('warn','Sector-specific accounting','Banks, insurers and similar companies need specialist financial models. Generic health scores are withheld.');
+ const year=latest?.date?Date.parse(latest.date+'T00:00:00Z'):NaN;
+ const age=Number.isFinite(year)?(Date.now()-year)/86400000:null;
+ if(age===null||!Number.isFinite(age))flag('warn','Unknown statement age','Could not determine when the latest annual fiscal period ended.');
+ else if(age>540)flag('warn','Old annual fiscal period',`Latest fiscal period ended ${Math.round(age)} days ago. Check for newer interim and annual filings; this is not a provider update timestamp.`);
+ for(const [label,val] of [['Revenue',a.revenue],['Operating cash flow',a.ocf],['Free cash flow',a.fcf],['Total debt',a.debt],['Cash',a.cash]])if(!Number.isFinite(val))flag('warn',label+' missing','This metric is unavailable in the latest aligned financial statements.');
+ if(Number.isFinite(a.revenue)&&a.revenue<=0)flag('warn','Non-positive revenue','Standard growth and margin ratios may be misleading.');
+ if(Number.isFinite(a.ocf)&&a.ocf<0)flag('bad','Negative operating cash flow','Annual operating cash flow is negative; investigate working capital and recurring cash burn.');
+ if(Number.isFinite(a.fcf)&&a.fcf<0)flag('bad','Negative free cash flow','Latest annual free cash flow is negative.');
+ if(Number.isFinite(a.leverage)&&a.leverage>3)flag('bad','Elevated leverage',`Net debt / EBITDA: ${a.leverage.toFixed(2)}×; examine maturities, covenants and refinancing costs.`);
+ if(Number.isFinite(a.interestCover)&&a.interestCover<3)flag('bad','Weak interest coverage',`Operating income / absolute interest expense: ${a.interestCover.toFixed(2)}×.`);
+ if(Number.isFinite(a.marginTrend)&&a.marginTrend< -3)flag('warn','Operating margin compression',`Operating margin changed ${a.marginTrend.toFixed(1)} percentage points across the available period.`);
+ if(Number.isFinite(v.capexIntensity)&&v.capexIntensity>.6)flag('warn','High reinvestment intensity',`Annual capex / operating cash flow: ${(v.capexIntensity*100).toFixed(1)}%. Determine maintenance versus growth spending.`);
+ if(Number.isFinite(v.capexIntensity)&&Number.isFinite(v.priorCapex)&&v.capexIntensity-v.priorCapex>.15)flag('warn','Rising capex burden','Capex is consuming at least 15 percentage points more of operating cash flow than in the prior year.');
+ if(h.length>1&&Number.isFinite(h[0].netDebt)&&Number.isFinite(h.at(-1).netDebt)&&h[0].netDebt>h.at(-1).netDebt)flag('warn','Net debt increased','Investigate whether higher debt financed productive investments, acquisitions or distributions.');
+ return {a,h,v,issues,dates,age};
+}
+function sl26AuditMarkup(symbol,d){const x=sl26Audit(d),bad=x.issues.filter(f=>f.severity==='bad').length,warn=x.issues.filter(f=>f.severity==='warn').length;
+ const cards=x.issues.map(f=>`<div class="sl26-flag ${f.severity==='bad'?'sl26-bad':'sl26-warn'}"><strong>${safe(f.title)}</strong><div class="sl26-meta">${safe(f.detail)}</div></div>`).join('');
+ return `<div class="panel" id="sl26Audit"><h2>Data reliability & risk intelligence · v2.6</h2><p class="muted small">Rule-based observations based on available annual filings. These flags are not independent verification of the provider data and do not forecast outcomes.</p><div class="live-grid">${slStat('Critical review flags',String(bad))}${slStat('Caution flags',String(warn))}${slStat('Aligned annual periods',String(x.h.length)+' / 5')}${slStat('Latest fiscal year end',x.dates[0]||'Unknown')}</div><p class="sl26-meta" style="margin-top:13px">Fetched for this analysis: ${safe(new Date().toLocaleString())} (not the provider market-price timestamp). Financial periods: ${safe(x.dates.join(' / '))}. Reported currencies: ${safe(x.a.currencies.join(', ')||'Unknown')}. Profile currency: ${safe(x.a.p.currency||'Unknown')}.</p>${cards||'<div class="sl26-flag sl26-good"><strong>No defined data or numerical risk flags triggered</strong><div class="sl26-meta">This does not establish that the company is safe or that all data is accurate.</div></div>'}<p class="live-note">Review the latest company annual and interim filings for debt maturity schedules, covenant headroom, off-balance-sheet obligations and management commentary; these are not available from the current endpoints.</p></div>`;
+}
+const sl26PriorMarkup=slLiveMarkup;
+slLiveMarkup=function(symbol,d){return sl26PriorMarkup(symbol,d)+sl26AuditMarkup(symbol,d)};
+function sl26Backup(){const research={};for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(key&&key.startsWith(SL25_PREFIX)){const symbol=key.slice(SL25_PREFIX.length);if(/^[A-Z0-9.^-]{1,15}$/.test(symbol)){try{research[symbol]=sl25Read(symbol)}catch(e){}}}}
+ return {format:'stocklens-research-backup',version:2,exported:new Date().toISOString(),research,liveWatch:[...slLiveWatch],demoSettings:{weights:[...state.weights],watchlist:[...state.watchlist]}};
+}
+function sl26Download(){const blob=new Blob([JSON.stringify(sl26Backup(),null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='stocklens-complete-backup-v26.json';document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),2000)}
+function sl26ValidateBackup(data){if(!data||data.format!=='stocklens-research-backup'||data.version!==2||!data.research||typeof data.research!=='object'||Array.isArray(data.research))throw Error('Not a valid StockLens v2.6 research backup.');
+ const entries=Object.entries(data.research);if(entries.length>250)throw Error('Backup contains too many companies.');
+ const validated={};for(const [symbol,r] of entries){if(!/^[A-Z0-9.^-]{1,15}$/.test(symbol)||!r||typeof r!=='object'||Array.isArray(r))throw Error('Invalid research entry.');const clean=sl25Empty();for(const key of ['thesis','bear','catalysts','valuation']){if(typeof r[key]!=='string'||r[key].length>5000)throw Error('Invalid note field for '+symbol);clean[key]=r[key]}
+ if(!['Researching','Watch closely','Needs more evidence','Pass for now'].includes(r.decision))throw Error('Invalid status for '+symbol);clean.decision=r.decision;
+ if(!r.checks||typeof r.checks!=='object'||Array.isArray(r.checks)||Object.keys(r.checks).length>200)throw Error('Invalid checklist for '+symbol);
+ for(const [k,v] of Object.entries(r.checks)){if(k.length>300||v!==true)throw Error('Invalid checklist item for '+symbol);clean.checks[k]=true}
+ clean.updated=typeof r.updated==='string'?r.updated.slice(0,100):'';validated[symbol]=clean}
+ if(!Array.isArray(data.liveWatch)||data.liveWatch.length>50||data.liveWatch.some(x=>typeof x!=='string'||!/^[A-Z0-9.^-]{1,15}$/.test(x)))throw Error('Invalid live watchlist.');
+ const ds=data.demoSettings;if(!ds||!Array.isArray(ds.weights)||ds.weights.length!==6||ds.weights.some(x=>!Number.isFinite(x)||x<0||x>100)||ds.weights.reduce((a,b)=>a+b,0)!==100||!Array.isArray(ds.watchlist))throw Error('Invalid demo settings.');
+ return {research:validated,liveWatch:data.liveWatch,demoSettings:{weights:ds.weights,watchlist:ds.watchlist.filter(x=>DEMO.some(y=>y.ticker===x))}};
+}
+const sl26Panel=document.createElement('div');sl26Panel.className='panel';sl26Panel.innerHTML='<h2>Complete research backup · v2.6</h2><p class="muted small">Download all ticker research notes, completed checklists, research statuses, live watchlist and demo settings as one JSON file. Keep this file somewhere safe; your research otherwise lives only in this browser.</p><div class="actions"><button class="btn primary" id="sl26BackupBtn">Download full backup</button><button class="btn" id="sl26ImportBtn">Restore full backup</button></div><input type="file" id="sl26BackupFile" accept=".json,application/json" class="sl26-file hidden"><p id="sl26Message" class="live-note">Restore replaces existing local research and watchlists after your confirmation. Download your current backup first.</p>';
+$('settings').prepend(sl26Panel);
+$('sl26BackupBtn').onclick=sl26Download;
+$('sl26ImportBtn').onclick=()=>$('sl26BackupFile').click();
+$('sl26BackupFile').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{if(file.size>3_000_000)throw Error('Backup file is too large.');const incoming=sl26ValidateBackup(JSON.parse(await file.text()));const n=Object.keys(incoming.research).length;
+ if(!confirm(`Restore ${n} company research record(s)? This will REPLACE existing research notes and watchlists on this device. Export your current backup first.`))return;
+ const old={};for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith(SL25_PREFIX))old[k]=localStorage.getItem(k)}
+ const snapshot={old,live:localStorage.getItem(SL_LIVE_STORE),demo:localStorage.getItem(STORE)};
+ try{for(const k of Object.keys(old))localStorage.removeItem(k);for(const [symbol,r] of Object.entries(incoming.research))localStorage.setItem(sl25Key(symbol),JSON.stringify(r));localStorage.setItem(SL_LIVE_STORE,JSON.stringify(incoming.liveWatch));localStorage.setItem(STORE,JSON.stringify(incoming.demoSettings))}catch(err){for(const k of Object.keys(incoming.research))localStorage.removeItem(sl25Key(k));for(const [k,v] of Object.entries(snapshot.old))localStorage.setItem(k,v);if(snapshot.live===null)localStorage.removeItem(SL_LIVE_STORE);else localStorage.setItem(SL_LIVE_STORE,snapshot.live);if(snapshot.demo===null)localStorage.removeItem(STORE);else localStorage.setItem(STORE,snapshot.demo);throw err}
+ slLiveWatch=[...incoming.liveWatch];state.weights=[...incoming.demoSettings.weights];state.watchlist=[...incoming.demoSettings.watchlist];slRenderWatch();render();$('sl26Message').textContent=`Restored ${n} research record(s). Reopen a ticker to view its notes.`;
+ }catch(err){$('sl26Message').textContent='Restore failed: '+err.message}finally{e.target.value=''}};
+const sl26Foot=document.querySelector('.foot');if(sl26Foot)sl26Foot.textContent='StockLens v2.6 · Data reliability checks, risk intelligence and complete research backups · Annual FMP data may be delayed or restated · Experimental screening, not investment advice.';
+</script>
 </body></html>
