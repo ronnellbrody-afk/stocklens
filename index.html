@@ -464,4 +464,74 @@ $('sl26BackupFile').onchange=async function(e){const file=e.target.files?.[0];if
 $('sl26BackupBtn').textContent='Download full backup (including snapshots)';
 const sl28Foot=document.querySelector('.foot');if(sl28Foot)sl28Foot.textContent='StockLens v2.8 · User-saved historical snapshots and manual change detection · No background monitoring · Financial data may be delayed or restated · Not investment advice.';
 </script>
+
+<style>
+.sl29-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0}.sl29-kpi{border:1px solid #304158;background:#0c1728;border-radius:12px;padding:13px}.sl29-kpi b{font-size:23px;display:block;margin:5px 0}.sl29-item{border:1px solid #304158;border-radius:12px;padding:14px;margin:10px 0;background:#132238}.sl29-item-head{display:flex;justify-content:space-between;align-items:start;gap:10px}.sl29-label{border:1px solid #40566d;border-radius:20px;padding:4px 8px;font-size:11px;white-space:nowrap}.sl29-flag{padding:6px 0;border-top:1px solid #2a3b52;font-size:12px;line-height:1.5}.sl29-flag:first-child{border-top:0}.sl29-note{color:#a4b4ca;font-size:12px;line-height:1.6}.sl29-filter{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.sl29-filter select{flex:1;min-width:120px}@media(max-width:520px){.sl29-kpis{grid-template-columns:1fr 1fr}.sl29-item-head{flex-wrap:wrap}}
+</style>
+<script>
+'use strict';
+/* v2.9: local-only research triage. Review priority is not a trading signal. */
+const sl29Thresholds={revenue:0.10,fcf:0.20,netDebt:0.20,opMargin:0.03,leverage:0.5};
+function sl29Delta(before,after,key){
+ if(!Number.isFinite(before)||!Number.isFinite(after))return null;
+ if(key==='opMargin'||key==='leverage')return after-before;
+ if(before===0)return after===0?0:null;
+ return (after-before)/Math.abs(before);
+}
+function sl29Severity(key,delta){
+ if(!Number.isFinite(delta))return null;
+ const negative=(key==='revenue'||key==='fcf'||key==='opMargin')?delta<0:delta>0;
+ const magnitude=Math.abs(delta),threshold=sl29Thresholds[key];
+ if(magnitude<threshold)return {level:'Minor',points:0,negative};
+ return {level:magnitude>=threshold*2?'High':'Moderate',points:negative?(magnitude>=threshold*2?3:2):0,negative};
+}
+function sl29Evaluate(symbol,current){
+ const history=sl28Read(symbol),baseline=history.at(-1),research=sl25Read(symbol);
+ const flags=[];let state='No baseline',priority=0;
+ if(!baseline){flags.push('No saved financial baseline. Analyse the company and save a snapshot before comparing changes.');priority+=1}
+ else if(!current){state='Needs refresh';flags.push('Snapshot saved, but no fresh analysis loaded in this session. Open Analyse to compare current provider figures.');priority+=1}
+ else if(!baseline.period||!current.period){state='Unverified period';flags.push('Fiscal period missing; financial change interpretation withheld.');priority+=1}
+ else if(baseline.currency!==current.currency){state='Currency mismatch';flags.push('Reporting currency changed. Monetary change comparisons withheld.');priority+=2}
+ else if(baseline.period===current.period){state='Same fiscal period';
+   const changed=sl28Fields.some(([key])=>{const a=baseline.values[key],b=current.values[key];return Number.isFinite(a)&&Number.isFinite(b)&&Math.abs(a-b)>Math.max(1e-8,Math.abs(a)*1e-9)});
+   flags.push(changed?'Figures changed within the same fiscal period: possible restatement or provider correction; not new operating performance.':'Same fiscal period and figures unchanged. No new financial period to assess.');
+   if(changed)priority+=2;
+ }else if(current.period<baseline.period){state='Older provider period';flags.push('Current provider data predates the saved baseline. Comparison withheld until a newer reporting period is available.');priority+=1}
+ else{state='New reporting period';
+   for(const [key,label] of sl28Fields){const before=baseline.values[key],after=current.values[key];const delta=sl29Delta(before,after,key);if(delta===null){if(before!==after)flags.push(label+': comparison unavailable (missing value or zero baseline).');continue}
+    const sev=sl29Severity(key,delta);if(sev.level==='Minor')continue;
+    const formatted=key==='opMargin'?(delta*100).toFixed(1)+' percentage points':key==='leverage'?delta.toFixed(2)+'×':(delta*100).toFixed(1)+'%';
+    flags.push(label+': '+(delta>=0?'+':'')+formatted+' ('+sev.level.toLowerCase()+' movement; '+(sev.negative?'potential deterioration':'potential improvement')+').');priority+=sev.points;
+   }
+   if(!flags.length)flags.push('No movements exceeded the illustrative thresholds across comparable available metrics.');
+ }
+ if(research.decision==='Needs more evidence')priority+=1;
+ const noteCount=['thesis','bear','catalysts','valuation'].filter(k=>research[k].trim()).length;
+ if(noteCount===0)priority+=1;
+ const label=priority>=5?'Review first':priority>=2?'Review soon':'Routine review';
+ return {symbol,history,baseline,research,flags,state,priority,label,noteCount,current};
+}
+const sl29Panel=document.createElement('div');sl29Panel.className='panel';sl29Panel.id='sl29Command';
+sl29Panel.innerHTML='<h2>Research command centre · v2.9</h2><p class="sl29-note">Manual research triage across your saved live watchlist. This dashboard uses local snapshots and only compares with current financial data after you open Analyse. Priority is a workflow aid, not a buy/sell or risk prediction.</p><div id="sl29KPIs" class="sl29-kpis"></div><div class="sl29-filter"><select id="sl29Order" aria-label="Sort research priorities"><option value="priority">Highest review priority</option><option value="ticker">Ticker A–Z</option><option value="recent">Most recently saved baseline</option></select><select id="sl29Filter" aria-label="Filter research status"><option value="all">All research statuses</option><option value="Researching">Researching</option><option value="Watch closely">Watch closely</option><option value="Needs more evidence">Needs more evidence</option><option value="Pass for now">Pass for now</option></select></div><div id="sl29Rows"></div><p class="sl29-note">Illustrative materiality: revenue ±10%, FCF ±20%, net debt ±20%, operating margin ±3 pp, leverage ±0.5×; double these thresholds is labelled high. These thresholds are not sector calibrated. Sign changes, missing metrics, restatements and reporting currency require manual investigation.</p>';
+$('watchlist').prepend(sl29Panel);
+function sl29Render(){
+ const k=$('sl29KPIs'),box=$('sl29Rows');if(!box)return;
+ const rows=slLiveWatch.map(symbol=>sl29Evaluate(symbol,sl28Loaded.has(symbol)?sl28Capture(sl28Loaded.get(symbol)):null));
+ const baselines=rows.filter(x=>x.baseline).length,refreshed=rows.filter(x=>x.current).length,needs=rows.filter(x=>x.priority>=2).length;
+ k.innerHTML=`<div class="sl29-kpi"><span class="small muted">Watchlist</span><b>${rows.length}</b></div><div class="sl29-kpi"><span class="small muted">Saved baselines</span><b>${baselines}</b></div><div class="sl29-kpi"><span class="small muted">Reviewed this session</span><b>${refreshed}</b></div>`;
+ const filter=$('sl29Filter').value,order=$('sl29Order').value;
+ const shown=rows.filter(x=>filter==='all'||x.research.decision===filter);
+ shown.sort((a,b)=>order==='ticker'?a.symbol.localeCompare(b.symbol):order==='recent'?(b.baseline?.savedAt||'').localeCompare(a.baseline?.savedAt||''):b.priority-a.priority||a.symbol.localeCompare(b.symbol));
+ box.innerHTML=shown.length?shown.map(x=>`<div class="sl29-item"><div class="sl29-item-head"><div><strong>${safe(x.symbol)}</strong><div class="sl29-note">${safe(x.research.decision)} · ${safe(x.state)} · ${x.history.length} snapshot(s)</div><div class="sl29-note">Thesis sections filled: ${x.noteCount}/4 · Last saved research: ${safe(x.research.updated?new Date(x.research.updated).toLocaleDateString():'Not saved')}</div></div><span class="sl29-label ${x.priority>=5?'red':x.priority>=2?'amber':'green'}">${safe(x.label)}</span></div><div style="margin-top:10px">${x.flags.map(f=>`<div class="sl29-flag">${safe(f)}</div>`).join('')}</div><div class="actions" style="margin-top:10px"><button class="btn small" data-live-analyse="${safe(x.symbol)}">Analyse / refresh</button></div></div>`).join(''):'<div class="empty">No watchlist companies match this filter.</div>';
+}
+$('sl29Order').addEventListener('change',sl29Render);$('sl29Filter').addEventListener('change',sl29Render);
+const sl29PreviousOverview=sl28RenderOverview;
+sl28RenderOverview=function(){sl29PreviousOverview();sl29Render()};
+const sl29PreviousLoad=slLoad;
+slLoad=async function(symbol){const result=await sl29PreviousLoad(symbol);sl29Render();return result};
+const sl29PriorResearchSave=sl25Save;
+sl25Save=function(symbol,r){const result=sl29PriorResearchSave(symbol,r);sl29Render();return result};
+sl29Render();
+const sl29Foot=document.querySelector('.foot');if(sl29Foot)sl29Foot.textContent='StockLens v2.9 · Research command centre and manual financial change triage · No background monitoring · Experimental thresholds, not financial advice.';
+</script>
 </body></html>
