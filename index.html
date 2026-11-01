@@ -613,7 +613,7 @@ const sl30Foot=document.querySelector('.foot');if(sl30Foot)sl30Foot.textContent=
 const sl31Panel=document.createElement('div');
 sl31Panel.id='sl31Prices';
 sl31Panel.innerHTML=`<h3>Market data assistant · v3.1</h3>
-<p class="sl30-muted">Optional, on-demand updates. Company profile prices come from your existing FMP-backed Worker. The Worker does not currently provide a verified exchange timestamp or real-time guarantee. FX uses the latest available published reference rate from Frankfurter; it is not a trading rate. Neither source updates holdings automatically.</p>
+<p class="sl30-muted">Optional, on-demand updates. Company profile prices come from your existing FMP-backed Worker. The Worker does not currently provide a verified exchange timestamp or real-time guarantee. FX checks published reference rates from multiple providers; it is not a trading rate. Neither source updates holdings automatically.</p>
 <div class="sl31-actions"><button class="btn" id="sl31FetchPrices">Check held-stock prices</button><button class="btn" id="sl31FetchFx">Check USD → GBP FX</button></div>
 <div id="sl31Status" class="sl31-status" role="status">Your saved manual values remain unchanged until you explicitly apply an update.</div>
 <div id="sl31Candidates"></div>
@@ -627,7 +627,7 @@ function sl31QuoteCurrency(p){return String(p.currency||'').trim().toUpperCase()
 function sl31FetchPriceData(symbol){return slGet(symbol,'profile')}
 function sl31CandidateRender(){
  const quoteMarkup=sl31Quotes.map((q,i)=>`<div class="sl30-holding"><strong>${safe(q.symbol)} · ${safe(q.currency)}</strong><p class="sl30-muted">FMP profile reference price: ${sl30Native(q.price,q.currency)} · retrieved ${safe(q.checkedAt)}. Provider quote timestamp not verified. Current saved manual price: ${sl30Native(q.previous,q.currency)}.</p><button class="btn" data-sl31-apply="${i}">Apply this price</button></div>`).join('');
- const fxMarkup=sl31FxCandidate?`<div class="sl30-holding"><strong>USD → GBP · ${sl31FxCandidate.rate.toFixed(6)}</strong><p class="sl30-muted">Frankfurter reference rate dated ${safe(sl31FxCandidate.date)}. Existing rate: ${sl30Rate()===null?'Not set':sl30Rate()}. Reference rates are not executable conversion quotes.</p><button class="btn" id="sl31ApplyFx">Apply FX rate</button></div>`:'';
+ const fxMarkup=sl31FxCandidate?`<div class="sl30-holding"><strong>USD → GBP · ${sl31FxCandidate.rate.toFixed(6)}</strong><p class="sl30-muted">${safe(sl31FxCandidate.source)} reference rate dated ${safe(sl31FxCandidate.date)}. Existing rate: ${sl30Rate()===null?'Not set':sl30Rate()}. Reference rates are not executable conversion quotes.</p><button class="btn" id="sl31ApplyFx">Apply FX rate</button></div>`:'';
  sl31Candidates.innerHTML=quoteMarkup+fxMarkup;
 }
 $('sl31FetchPrices').onclick=async()=>{
@@ -646,17 +646,36 @@ $('sl31FetchPrices').onclick=async()=>{
   sl31Status.textContent=messages.join('\n')||'No candidates returned.';sl31CandidateRender();
  }finally{btn.disabled=false}
 };
+async function sl311FetchFx(){
+ const providers=[
+  {name:'Frankfurter (alternate host)',url:'https://api.frankfurter.dev/v1/latest?base=USD&symbols=GBP',parse:d=>({rate:d?.rates?.GBP,date:d?.date,base:d?.base})},
+  {name:'Frankfurter (original host)',url:'https://api.frankfurter.app/latest?from=USD&to=GBP',parse:d=>({rate:d?.rates?.GBP,date:d?.date,base:d?.base})},
+  {name:'ExchangeRate-API (open reference)',url:'https://open.er-api.com/v6/latest/USD',parse:d=>({rate:d?.rates?.GBP,date:d?.time_last_update_utc?new Date(d.time_last_update_utc).toISOString().slice(0,10):null,base:d?.base_code,valid:d?.result==='success'})}
+ ];
+ const failures=[];
+ for(const provider of providers){
+  try{
+   const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),9000);
+   let response;
+   try{response=await fetch(provider.url,{cache:'no-store',signal:controller.signal})}finally{clearTimeout(timer)}
+   if(!response.ok)throw Error('HTTP '+response.status);
+   const raw=await response.json(),d=provider.parse(raw);
+   if(d.valid===false||d.base!=='USD'||typeof d.rate!=='number'||!Number.isFinite(d.rate)||d.rate<=0||d.rate>=2||typeof d.date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(d.date))throw Error('invalid FX response');
+   const days=(Date.now()-Date.parse(d.date+'T00:00:00Z'))/86400000;
+   if(!Number.isFinite(days)||days>10||days< -1)throw Error('reference rate is stale or future-dated');
+   return {rate:d.rate,date:d.date,source:provider.name};
+  }catch(e){failures.push(provider.name+': '+(e?.name==='AbortError'?'timed out':e?.message||'network error'))}
+ }
+ throw Error(failures.join(' | '));
+}
 $('sl31FetchFx').onclick=async()=>{
  const btn=$('sl31FetchFx');btn.disabled=true;sl31FxCandidate=null;sl31CandidateRender();
+ sl31Status.textContent='Checking published FX reference rates…';
  try{
-  const response=await fetch('https://api.frankfurter.app/latest?from=USD&to=GBP',{cache:'no-store'});
-  if(!response.ok)throw Error('FX service returned HTTP '+response.status);
-  const data=await response.json(),rate=data?.rates?.GBP,date=data?.date;
-  if(data?.base!=='USD'||typeof rate!=='number'||!Number.isFinite(rate)||rate<=0||rate>10||typeof date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(date))throw Error('FX response failed validation');
-  sl31FxCandidate={rate,date};
-  sl31Status.textContent='FX reference rate retrieved; review and apply below. Published date: '+date+'.';
+  sl31FxCandidate=await sl311FetchFx();
+  sl31Status.textContent='FX reference retrieved from '+sl31FxCandidate.source+'; review before applying. Published date: '+sl31FxCandidate.date+'.';
   sl31CandidateRender();
- }catch(e){sl31Status.textContent='FX unavailable: '+(e?.message||'Network error')+'. Saved FX remains unchanged.'}
+ }catch(e){sl31Status.textContent='FX providers unavailable: '+(e?.message||'Network error')+'. Your saved FX remains unchanged. You can still enter a manually verified rate above.'}
  finally{btn.disabled=false}
 };
 sl31Candidates.addEventListener('click',e=>{
@@ -684,7 +703,8 @@ const sl31PriorSave=sl30Save;
 sl30Save=function(){sl31PriorSave();sl31ResetSuggestions()};
 const sl31PriorRestore=$('sl26BackupFile').onchange;
 $('sl26BackupFile').onchange=async function(e){await sl31PriorRestore(e);sl31ResetSuggestions()};
+const sl31Heading=sl30PortfolioPanel.querySelector('h2');if(sl31Heading)sl31Heading.textContent='Portfolio Intelligence · v3.1.1';
 const sl31Foot=document.querySelector('.foot');
-if(sl31Foot)sl31Foot.textContent='StockLens v3.1 · On-demand FMP profile prices and Frankfurter reference FX · Quote timestamps not verified · No automatic updates or trading · Not investment advice.';
+if(sl31Foot)sl31Foot.textContent='StockLens v3.1.1 · On-demand FMP profile prices and fallback reference FX · Quote timestamps not verified · No automatic updates or trading · Not investment advice.';
 </script>
 </body></html>
