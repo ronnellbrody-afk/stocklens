@@ -894,4 +894,72 @@ $('sl26BackupBtn').textContent='Download full backup (including transactions)';
 const sl33Foot=document.querySelector('.foot');if(sl33Foot)sl33Foot.textContent='StockLens v3.3 · Manual investment transaction journal · FIFO is not a UK tax calculation · No automatic trading or real-time guarantee · Not investment advice.';
 document.title='StockLens v3.3 | Investment Performance Intelligence';sl33Reset();sl33Render();
 </script>
+<style>
+.sl34-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.sl34-controls label{display:flex;flex-direction:column;gap:6px;color:#a4b4ca;font-size:12px}.sl34-controls input,.sl34-controls select{width:100%}.sl34-table{width:100%;border-collapse:collapse;font-size:12px}.sl34-table th,.sl34-table td{padding:9px 7px;text-align:left;border-bottom:1px solid #304158}.sl34-table input{width:90px;max-width:100%;padding:8px}.sl34-up{color:#70dfb7}.sl34-down{color:#ff939a}.sl34-help{color:#a4b4ca;font-size:12px;line-height:1.6}.sl34-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}.sl34-kpis>div{background:#0c1728;border:1px solid #304158;border-radius:12px;padding:13px}.sl34-kpis span{display:block;color:#a4b4ca;font-size:12px}.sl34-kpis b{display:block;font-size:21px;margin-top:5px}@media(max-width:420px){.sl34-controls{grid-template-columns:1fr}.sl34-table{font-size:11px}.sl34-table input{width:65px;padding:5px}}
+</style>
+<script>
+'use strict';
+/* StockLens v3.4: scenario-only calculations. No portfolio or journal writes. */
+const sl34Panel=document.createElement('div');sl34Panel.className='panel';sl34Panel.id='sl34Risk';
+sl34Panel.innerHTML=`<h2>Portfolio Risk & Scenario Intelligence · v3.4</h2>
+<p class="sl34-help">Run hypothetical market, individual holding and FX shocks. This sandbox reads your saved holdings but <b>never changes them</b>. All assumptions are manual, not forecasts or live prices.</p>
+<h3>Portfolio stress test</h3><div class="sl34-controls">
+<label>All holdings price change (%)<input id="sl34Market" type="number" min="-100" max="1000" step="1" value="-20"></label>
+<label>USD → GBP FX change (%)<input id="sl34FxShock" type="number" min="-99.99" max="1000" step="1" value="0"></label></div>
+<div class="sl30-actions"><button class="btn" data-sl34-preset="-10">Market −10%</button><button class="btn" data-sl34-preset="-20">Market −20%</button><button class="btn" data-sl34-preset="-30">Market −30%</button><button class="btn" id="sl34Reset">Reset scenarios</button></div>
+<div id="sl34Overview"></div><h3 style="margin-top:18px">Individual holding scenarios</h3>
+<p class="sl34-help">Override the portfolio-wide price shock for a particular holding. Clear its override to use the common shock again. FX changes affect USD-denominated holdings only.</p>
+<div id="sl34Positions" class="scroll"></div><h3 style="margin-top:18px">Rebalancing simulator</h3>
+<p class="sl34-help">Enter target percentages adding to 100%. The simulator calculates indicative GBP buy/sell differences at today's saved prices and FX. No orders are placed. It assumes fractional units, no cash balance, costs, taxes or trading restrictions.</p>
+<div id="sl34Targets" class="scroll"></div><div id="sl34Rebalance"></div>
+<p class="sl34-help">Price shocks apply to each holding's trading currency; FX shock multiplies the saved GBP-per-USD rate. The scenarios do not model correlation, volatility, liquidity, dividends, leverage, economic currency exposures or probability of loss. Results may be stale if saved prices or FX are stale.</p>`;
+sl32Panel.insertAdjacentElement('afterend',sl34Panel);
+let sl34Overrides={},sl34Targets={};
+const sl34Number=(x,min,max)=>{if(String(x).trim()==='')return null;const n=Number(x);return Number.isFinite(n)&&n>=min&&n<=max?n:null};
+function sl34Ready(){const p=sl30Portfolio;return p.holdings.length>0&&(!p.holdings.some(h=>h.currency==='USD')||Number.isFinite(p.gbpPerUsd)&&p.gbpPerUsd>0)}
+function sl34Data(){
+ const market=sl34Number($('sl34Market').value,-100,1000),fx=sl34Number($('sl34FxShock').value,-99.99,1000);
+ if(market===null||fx===null)throw Error('Enter a market shock between −100% and +1000%, and FX shock above −100%.');
+ if(!sl34Ready())throw Error('Add holdings and a valid USD→GBP reference rate (if required) first.');
+ const rows=sl30Portfolio.holdings.map(h=>{
+  const base=sl30Value(h),override=Object.hasOwn(sl34Overrides,h.symbol)?sl34Overrides[h.symbol]:null;
+  const shock=override===null?market:override;
+  const currencyMultiplier=h.currency==='USD'?1+fx/100:1;
+  const scenario=base*(1+shock/100)*currencyMultiplier;
+  return {h,base,scenario,shock,delta:scenario-base};
+ });
+ const base=rows.reduce((s,r)=>s+r.base,0),scenario=rows.reduce((s,r)=>s+r.scenario,0);
+ return {rows,base,scenario,delta:scenario-base,pct:base>0?100*(scenario/base-1):0,market,fx};
+}
+function sl34Render(){
+ const summary=$('sl34Overview'),positions=$('sl34Positions'),targets=$('sl34Targets'),rebal=$('sl34Rebalance');
+ let d;try{d=sl34Data()}catch(err){summary.innerHTML='<div class="sl30-warning">'+safe(err.message)+'</div>';positions.innerHTML='';targets.innerHTML='';rebal.innerHTML='';return}
+ summary.innerHTML=`<div class="sl34-kpis"><div><span>Current saved portfolio</span><b>${sl30Gbp(d.base)}</b></div><div><span>Simulated portfolio</span><b>${sl30Gbp(d.scenario)}</b></div><div><span>Simulated gain / loss</span><b class="${d.delta<0?'sl34-down':'sl34-up'}">${d.delta<0?'−':'+'}${sl30Gbp(Math.abs(d.delta))}</b></div><div><span>Simulated change</span><b class="${d.pct<0?'sl34-down':'sl34-up'}">${d.pct>0?'+':''}${d.pct.toFixed(2)}%</b></div></div>`;
+ positions.innerHTML=`<table class="sl34-table"><thead><tr><th>Holding</th><th>Price shock %</th><th>Current</th><th>Scenario</th></tr></thead><tbody>${d.rows.map(r=>`<tr><td><b>${safe(r.h.symbol)}</b><div class="sl34-help">${safe(r.h.currency)}</div></td><td><input type="number" min="-100" max="1000" step="any" data-sl34-override="${safe(r.h.symbol)}" value="${Object.hasOwn(sl34Overrides,r.h.symbol)?sl34Overrides[r.h.symbol]:''}" placeholder="${d.market}"></td><td>${sl30Gbp(r.base)}</td><td>${sl30Gbp(r.scenario)}</td></tr>`).join('')}</tbody></table>`;
+ const active=d.rows.map(r=>r.h.symbol);for(const symbol of Object.keys(sl34Targets))if(!active.includes(symbol))delete sl34Targets[symbol];
+ targets.innerHTML=`<table class="sl34-table"><thead><tr><th>Holding</th><th>Current weight</th><th>Target %</th></tr></thead><tbody>${d.rows.map(r=>`<tr><td>${safe(r.h.symbol)}</td><td>${(100*r.base/d.base).toFixed(1)}%</td><td><input type="number" min="0" max="100" step="0.1" data-sl34-target="${safe(r.h.symbol)}" value="${Object.hasOwn(sl34Targets,r.h.symbol)?sl34Targets[r.h.symbol]:''}" placeholder="${(100*r.base/d.base).toFixed(1)}"></td></tr>`).join('')}</tbody></table><div class="sl30-actions"><button class="btn" id="sl34Equal">Equal weights</button><button class="btn" id="sl34Current">Use current weights</button></div>`;
+ sl34Rebalance(d);
+}
+function sl34Rebalance(d){const el=$('sl34Rebalance');const vals=d.rows.map(r=>sl34Number(sl34Targets[r.h.symbol]??'',0,100));if(vals.some(x=>x===null)){el.innerHTML='<p class="sl34-help">Set target weights or choose Equal weights / Use current weights.</p>';return}
+ const sum=vals.reduce((a,b)=>a+b,0);if(Math.abs(sum-100)>.011){el.innerHTML='<div class="sl30-warning">Target weights total '+sum.toFixed(2)+'%. Adjust to 100%.</div>';return}
+ const lines=d.rows.map((r,i)=>{const targetValue=d.base*vals[i]/100,change=targetValue-r.base,unitGbp=r.h.price*(r.h.currency==='GBP'?1:sl30Portfolio.gbpPerUsd);return `<tr><td>${safe(r.h.symbol)}</td><td>${sl30Gbp(targetValue)}</td><td class="${change<0?'sl34-down':'sl34-up'}">${change>=0?'Buy':'Sell'} ${sl30Gbp(Math.abs(change))}</td><td>${(Math.abs(change)/unitGbp).toFixed(4)}</td></tr>`});
+ el.innerHTML=`<p class="sl34-help">Indicative trades to rebalance <b>current saved portfolio</b> (not the stressed portfolio):</p><div class="scroll"><table class="sl34-table"><thead><tr><th>Ticker</th><th>Target value</th><th>GBP adjustment</th><th>Approx. units</th></tr></thead><tbody>${lines.join('')}</tbody></table></div>`;
+}
+for(const id of ['sl34Market','sl34FxShock'])$(id).addEventListener('input',sl34Render);
+sl34Panel.addEventListener('input',e=>{
+ const o=e.target.dataset.sl34Override,t=e.target.dataset.sl34Target;
+ if(o){const n=sl34Number(e.target.value,-100,1000);if(e.target.value.trim()==='')delete sl34Overrides[o];else if(n!==null)sl34Overrides[o]=n;else{$('sl34Overview').innerHTML='<div class="sl30-warning">Holding shock must be between −100% and +1000%.</div>';return}sl34Render()}
+ if(t){const n=sl34Number(e.target.value,0,100);if(e.target.value.trim()==='')delete sl34Targets[t];else if(n!==null)sl34Targets[t]=n;else{$('sl34Rebalance').textContent='Target weights must be between 0% and 100%.';return}try{sl34Rebalance(sl34Data())}catch{}}
+});
+sl34Panel.addEventListener('click',e=>{
+ const preset=e.target.closest('[data-sl34-preset]');if(preset){$('sl34Market').value=preset.dataset.sl34Preset;sl34Render();return}
+ if(e.target.closest('#sl34Reset')){$('sl34Market').value='0';$('sl34FxShock').value='0';sl34Overrides={};sl34Targets={};sl34Render();return}
+ if(e.target.closest('#sl34Equal')){const rows=sl30Portfolio.holdings;sl34Targets={};rows.forEach((h,i)=>sl34Targets[h.symbol]=i===rows.length-1?100-(rows.length-1)*100/rows.length:100/rows.length);sl34Render();return}
+ if(e.target.closest('#sl34Current')){const d=sl34Data();sl34Targets={};d.rows.forEach((r,i)=>sl34Targets[r.h.symbol]=i===d.rows.length-1?100-d.rows.slice(0,-1).reduce((s,x)=>s+100*x.base/d.base,0):100*r.base/d.base);sl34Render()}
+});
+const sl34OldRender=sl30Render;sl30Render=function(){sl34OldRender();sl34Render()};
+const sl34Footer=document.querySelector('.foot');if(sl34Footer)sl34Footer.textContent='StockLens v3.4 · Portfolio scenario sandbox · Saved prices and FX may be stale · No trading, forecasts or automatic alerts · Not investment advice.';
+document.title='StockLens v3.4 | Portfolio Risk & Scenario Intelligence';
+sl34Render();
+</script>
 </body></html>
