@@ -1118,4 +1118,86 @@ const sl37OldBackup=sl26Backup;sl26Backup=function(){const d=sl37OldBackup();d.p
 const sl37OldRestore=$('sl26BackupFile').onchange;$('sl26BackupFile').onchange=async function(e){const file=e.target.files?.[0];if(!file)return;let snapshots=null;try{const raw=JSON.parse(await file.text());if(Object.hasOwn(raw,'performanceSnapshots'))snapshots=sl37Validate(raw.performanceSnapshots)}catch(err){$('sl26Message').textContent='Restore failed: '+err.message;e.target.value='';return}await sl37OldRestore(e);if($('sl26Message').textContent.startsWith('Restored ')){if(snapshots){sl37Data=snapshots;sl37SaveData();$('sl26Message').textContent+=' Performance snapshots restored.'}else $('sl26Message').textContent+=' Older backup: performance snapshots retained.'}};
 document.title='StockLens v3.7 | Portfolio Performance Tracker';const sl37Footer=document.querySelector('.foot');if(sl37Footer)sl37Footer.textContent='StockLens v3.7 · Manual portfolio performance snapshots · Not a calculated investment return · No trades or forecasts · Not financial advice.';
 sl37Render();
-</script></body></html>
+</script>
+<style>
+.sl38-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.sl38-stat{background:#0c1728;border:1px solid #304158;border-radius:12px;padding:13px}.sl38-stat b{display:block;font-size:20px;margin-top:5px}.sl38-note{font-size:12px;color:#a4b4ca;line-height:1.6}.sl38-table{width:100%;border-collapse:collapse;font-size:12px}.sl38-table td,.sl38-table th{padding:9px 7px;border-bottom:1px solid #304158;text-align:left;white-space:nowrap}.sl38-input{width:100%;max-width:100%}@media(max-width:600px){.sl38-grid{grid-template-columns:1fr}}
+</style>
+<script>
+/* v3.8: Privacy-preserving, review-only CSV reconciliation. No account data is embedded in the public HTML. */
+const sl38Panel=document.createElement('div');sl38Panel.className='panel';sl38Panel.id='sl38Import';
+sl38Panel.innerHTML=`<h2>Trading 212 Import & Reconciliation · v3.8</h2>
+<p class="sl38-note">Import your own Trading 212 activity CSV files to review historical cash flows and transactions. Files are processed in this browser only, not uploaded to StockLens servers. This module <b>does not edit holdings, the journal, planning settings or performance snapshots</b>. Reconciliation is not yet an investment-return calculation.</p>
+<div class="actions"><label class="btn primary" style="display:inline-flex;align-items:center;cursor:pointer">Choose Trading 212 CSV files<input id="sl38Files" type="file" accept=".csv,text/csv" multiple style="display:none"></label><button class="btn" id="sl38Clear">Clear imported data</button><button class="btn" id="sl38Export" disabled>Export deduplicated CSV</button></div>
+<div id="sl38Message" class="sl38-note" style="margin:12px 0">No files loaded. Select all six original exports or the deduplicated CSV.</div>
+<div id="sl38Summary"></div><div id="sl38Breakdown" class="scroll"></div>
+<p class="sl38-note">Amounts are grouped by their original transaction currency. USD withdrawals are not silently converted to GBP. Trading activity is not necessarily a cash contribution; purchases and sales are internal movements. Share quantities from historical trades are provisional until reconciled with broker statements and corporate actions. A missing export period can make reconstructed positions incomplete.</p>`;
+sl37Panel.insertAdjacentElement('afterend',sl38Panel);
+let sl38Rows=[];
+function sl38ParseCSV(text){
+ const out=[];let row=[],cell='',quoted=false;
+ text=String(text).replace(/^\uFEFF/,'');
+ for(let i=0;i<text.length;i++){
+  const c=text[i];
+  if(quoted){if(c==='"'&&text[i+1]==='"'){cell+='"';i++}else if(c==='"')quoted=false;else cell+=c}
+  else if(c==='"')quoted=true;
+  else if(c===','){row.push(cell);cell=''}
+  else if(c==='\n'){row.push(cell.replace(/\r$/,''));if(row.some(x=>x!==''))out.push(row);row=[];cell=''}
+  else cell+=c;
+ }
+ if(quoted)throw Error('Unclosed CSV quotation');
+ if(cell!==''||row.length){row.push(cell.replace(/\r$/,''));out.push(row)}
+ if(!out.length)throw Error('Empty CSV');
+ const headers=out.shift().map(x=>x.trim());
+ if(!headers.includes('Action')||!headers.includes('Time (UTC)')||!headers.includes('Total')||!headers.includes('Currency (Total)'))throw Error('Not a supported Trading 212 activity CSV');
+ return out.map(cols=>Object.fromEntries(headers.map((k,i)=>[k,cols[i]||'']))).filter(r=>r.Action&&r['Time (UTC)']);
+}
+function sl38Key(r){
+ if(r.ID)return 'id:'+r.ID;
+ return 'core:'+['Action','Time (UTC)','ISIN','Ticker','No. of shares','Price / share','Total','Currency (Total)','Result'].map(k=>r[k]||'').join('\u001f');
+}
+function sl38Amount(n){const x=Number(n);return Number.isFinite(x)?x:null}
+function sl38Render(){
+ const box=$('sl38Summary'),table=$('sl38Breakdown');
+ if(!sl38Rows.length){box.innerHTML='';table.innerHTML='';$('sl38Export').disabled=true;return}
+ $('sl38Export').disabled=false;
+ const count={},amounts={},dates=sl38Rows.map(r=>r['Time (UTC)']).sort();
+ for(const r of sl38Rows){
+  const action=r.Action,cur=r['Currency (Total)']||'Unknown',n=sl38Amount(r.Total),key=action+'|'+cur;
+  count[action]=(count[action]||0)+1;
+  if(n!==null)amounts[key]=(amounts[key]||0)+n;
+ }
+ const number=n=>Number(n).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2});
+ const total=(a,c)=>number(amounts[a+'|'+c]||0);
+ box.innerHTML=`<div class="sl38-grid">
+ <div class="sl38-stat"><span class="muted small">Unique transactions</span><b>${sl38Rows.length.toLocaleString('en-GB')}</b></div>
+ <div class="sl38-stat"><span class="muted small">Period covered</span><b style="font-size:15px">${safe(dates[0].slice(0,10))} – ${safe(dates.at(-1).slice(0,10))}</b></div>
+ <div class="sl38-stat"><span class="muted small">GBP deposits</span><b>£${total('Deposit','GBP')}</b></div>
+ <div class="sl38-stat"><span class="muted small">GBP withdrawals</span><b>£${total('Withdrawal','GBP')}</b></div>
+ <div class="sl38-stat"><span class="muted small">USD withdrawals</span><b>$${total('Withdrawal','USD')}</b><span class="sl38-note">Kept in original currency</span></div>
+ <div class="sl38-stat"><span class="muted small">Recorded purchases / sales</span><b>${(count['Market buy']||0)+(count['Stop limit buy']||0)} / ${count['Market sell']||0}</b></div></div>
+ <h3 style="margin-top:18px">Activity by category and currency</h3>`;
+ table.innerHTML='<table class="sl38-table"><thead><tr><th>Activity</th><th>Currency</th><th>Records</th><th>Total field (signed)</th></tr></thead><tbody>'+Object.keys(amounts).sort().map(k=>{const [action,cur]=k.split('|');const ct=sl38Rows.filter(r=>r.Action===action&&(r['Currency (Total)']||'Unknown')===cur).length;return `<tr><td>${safe(action)}</td><td>${safe(cur)}</td><td>${ct}</td><td>${number(amounts[k])}</td></tr>`}).join('')+'</tbody></table><p class="sl38-note">Totals above reflect the CSV Total field exactly as exported. Do not add purchases/sales to external deposits/withdrawals. The import is read-only; no performance return is asserted.</p>';
+}
+$('sl38Files').addEventListener('change',async e=>{
+ const files=[...e.target.files];if(!files.length)return;
+ try{
+  const parsed=(await Promise.all(files.map(async f=>sl38ParseCSV(await f.text())))).flat();
+  const map=new Map();for(const r of parsed)map.set(sl38Key(r),r);
+  sl38Rows=[...map.values()].sort((a,b)=>a['Time (UTC)'].localeCompare(b['Time (UTC)']));
+  $('sl38Message').textContent=`Loaded ${files.length} file(s): ${parsed.length} rows; ${parsed.length-sl38Rows.length} overlapping duplicate(s) excluded. This import is temporary and is cleared on refresh.`;
+  sl38Render();
+ }catch(err){$('sl38Message').textContent='Import failed: '+err.message}
+ e.target.value='';
+});
+$('sl38Clear').onclick=()=>{sl38Rows=[];$('sl38Message').textContent='Imported data cleared. Saved StockLens holdings and history were not changed.';sl38Render()};
+$('sl38Export').onclick=()=>{
+ if(!sl38Rows.length)return;
+ const keys=[...new Set(sl38Rows.flatMap(r=>Object.keys(r)))];
+ const quote=x=>'"'+String(x??'').replace(/"/g,'""')+'"';
+ const csv='\uFEFF'+keys.map(quote).join(',')+'\r\n'+sl38Rows.map(r=>keys.map(k=>quote(r[k])).join(',')).join('\r\n');
+ const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='StockLens-Trading212-deduplicated.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+document.title='StockLens v3.8 | Trading 212 Reconciliation';
+const sl38Footer=document.querySelector('.foot');if(sl38Footer)sl38Footer.textContent='StockLens v3.8 · Local, temporary Trading 212 CSV review · No automatic trade or portfolio migration · Not financial advice.';
+</script>
+</body></html>
