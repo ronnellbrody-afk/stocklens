@@ -962,4 +962,81 @@ const sl34Footer=document.querySelector('.foot');if(sl34Footer)sl34Footer.textCo
 document.title='StockLens v3.4 | Portfolio Risk & Scenario Intelligence';
 sl34Render();
 </script>
+
+<style>
+.sl35-card{border:1px solid #304158;background:#0c1728;border-radius:12px;padding:14px}
+.sl35-card b{display:block;font-size:21px;margin:6px 0}
+.sl35-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.sl35-table{width:100%;border-collapse:collapse;font-size:13px}
+.sl35-table th,.sl35-table td{padding:10px 7px;text-align:left;border-bottom:1px solid #304158}
+.sl35-note{color:#a4b4ca;font-size:12px;line-height:1.6}
+.sl35-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0}
+.sl35-controls label{font-size:12px;color:#a4b4ca;display:grid;gap:7px}
+.sl35-controls input,.sl35-controls select{width:100%}
+@media(max-width:550px){.sl35-grid{grid-template-columns:1fr}}
+</style>
+<script>
+/* v3.5: Read-only decision support. Never writes to holdings, journal or backup. */
+const sl35Panel=document.createElement('div');
+sl35Panel.className='panel';
+sl35Panel.id='sl35Decisions';
+sl35Panel.innerHTML=`<h2>Portfolio Decision Intelligence · v3.5</h2>
+<p class="sl35-note">A decision-support workspace using your <b>saved holdings and reference FX</b>. Compare concentration, a hypothetical new cash contribution and a market shock. No trades are placed; your portfolio is never changed. This is not a recommendation or forecast.</p>
+<div class="sl35-controls">
+<label>New contribution (GBP)<input id="sl35Cash" type="number" min="0" max="100000000" step="10" value="250"></label>
+<label>Allocate contribution to<select id="sl35Destination"><option value="">Select a holding</option></select></label>
+<label>Single-position review threshold (%)<input id="sl35PositionLimit" type="number" min="1" max="100" step="1" value="30"></label>
+<label>Hypothetical broad market move (%)<input id="sl35Market" type="number" min="-100" max="1000" step="5" value="-20"></label>
+</div>
+<div id="sl35Output"></div>
+<p class="sl35-note">The 30% threshold is an editable illustrative review trigger, not an investment rule. Sector and domicile reflect company classifications, not economic revenue exposure. Correlations, volatility, cash, taxes, transaction fees and trading constraints are not modelled. A contribution is assumed to buy fractional units at saved prices and FX.</p>`;
+sl34Panel.insertAdjacentElement('afterend',sl35Panel);
+function sl35Render(){
+ const el=$('sl35Output'),sel=$('sl35Destination'),old=sel.value;
+ const holdings=sl30Portfolio.holdings;
+ sel.innerHTML='<option value="">Select a holding</option>'+holdings.map(h=>`<option value="${safe(h.symbol)}">${safe(h.symbol)}</option>`).join('');
+ if(holdings.some(h=>h.symbol===old))sel.value=old;
+ if(!holdings.length){el.innerHTML='<div class="empty">Add holdings to the portfolio first.</div>';return}
+ if(!sl34Ready()){el.innerHTML='<div class="notice">Enter a valid USD→GBP reference rate to calculate portfolio exposure.</div>';return}
+ const rows=holdings.map(h=>({h,value:sl30Value(h)}));
+ const total=rows.reduce((a,r)=>a+r.value,0);
+ if(!Number.isFinite(total)||total<=0){el.innerHTML='<div class="notice">Portfolio value unavailable. Check saved prices, quantities and FX.</div>';return}
+ const threshold=Number($('sl35PositionLimit').value);
+ const cash=Number($('sl35Cash').value);
+ const market=Number($('sl35Market').value);
+ if(!Number.isFinite(threshold)||threshold<1||threshold>100||!Number.isFinite(cash)||cash<0||cash>1e8||!Number.isFinite(market)||market< -100||market>1000){
+ el.innerHTML='<div class="notice">Check inputs: threshold 1–100%, contribution £0–£100m and market move −100% to +1000%.</div>';return}
+ const sorted=[...rows].sort((a,b)=>b.value-a.value);
+ const largest=sorted[0],largestWeight=100*largest.value/total;
+ const top3=100*sorted.slice(0,3).reduce((a,r)=>a+r.value,0)/total;
+ const effective=1/rows.reduce((a,r)=>a+Math.pow(r.value/total,2),0);
+ const flagged=sorted.filter(r=>100*r.value/total>threshold);
+ const selected=sel.value;
+ const after=total+cash;
+ const post=rows.map(r=>({...r,next:r.value+(r.h.symbol===selected?cash:0)}));
+ const afterLargest=selected&&after>0?Math.max(...post.map(r=>100*r.next/after)):null;
+ const scenario=total*(1+market/100);
+ const gbp=n=>sl30Gbp(n);
+ const details=selected?`<div class="sl35-card"><span class="muted small">Hypothetical contribution to ${safe(selected)}</span><b>${gbp(cash)}</b><div class="sl35-note">Largest position after contribution: ${afterLargest.toFixed(1)}% (currently ${largestWeight.toFixed(1)}%). Portfolio after contribution: ${gbp(after)}. No holdings changed.</div></div>`:'<div class="sl35-card"><span class="muted small">Contribution comparison</span><b>Select a holding</b><div class="sl35-note">Choose a destination to see the impact of new cash on concentration.</div></div>';
+ el.innerHTML=`<div class="sl35-grid">
+ <div class="sl35-card"><span class="muted small">Largest holding</span><b>${safe(largest.h.symbol)} · ${largestWeight.toFixed(1)}%</b><div class="sl35-note">${gbp(largest.value)} of ${gbp(total)}</div></div>
+ <div class="sl35-card"><span class="muted small">Effective number of equally weighted positions</span><b>${effective.toFixed(2)}</b><div class="sl35-note">${rows.length} actual holding(s); concentration measure 1 / Σ(weight²), not a risk forecast</div></div>
+ <div class="sl35-card"><span class="muted small">Top three combined weight</span><b>${top3.toFixed(1)}%</b><div class="sl35-note">Top ${Math.min(3,rows.length)} holdings by saved GBP value</div></div>
+ <div class="sl35-card"><span class="muted small">Market move ${market.toFixed(0)}%</span><b class="${market<0?'red':'green'}">${gbp(scenario)}</b><div class="sl35-note">Illustrative change ${market<0?'−':'+'}${gbp(Math.abs(scenario-total))}; assumes all holdings move together and FX stays fixed</div></div>
+ ${details}
+ <div class="sl35-card"><span class="muted small">Position review flags</span><b>${flagged.length}</b><div class="sl35-note">${flagged.length?flagged.map(r=>safe(r.h.symbol)+' ('+(100*r.value/total).toFixed(1)+'%)').join(', '):'No position exceeds the selected illustrative threshold'}</div></div>
+ </div>
+ <h3 style="margin-top:20px">Before / after contribution</h3>
+ <div class="scroll"><table class="sl35-table"><thead><tr><th>Holding</th><th>Current</th><th>After cash</th><th>Change</th></tr></thead><tbody>${post.map(r=>{const before=100*r.value/total,now=selected?100*r.next/after:before;return `<tr><td>${safe(r.h.symbol)}</td><td>${before.toFixed(1)}%</td><td>${selected?now.toFixed(1)+'%':'—'}</td><td>${selected?(now-before>=0?'+':'')+(now-before).toFixed(1)+' pp':'—'}</td></tr>`}).join('')}</tbody></table></div>
+ <p class="sl35-note">Decision prompts: Does the largest holding exceed your personal risk tolerance? Are several positions exposed to the same business cycle or country? Would adding cash reduce or increase concentration? Check investment thesis and current prices before acting.</p>`;
+}
+sl35Panel.addEventListener('input',e=>{if(e.target.matches('input,select'))sl35Render()});
+sl35Panel.addEventListener('change',e=>{if(e.target.matches('input,select'))sl35Render()});
+const sl35OldRender=sl30Render;
+sl30Render=function(){sl35OldRender();sl35Render()};
+document.title='StockLens v3.5 | Portfolio Decision Intelligence';
+const sl35Footer=document.querySelector('.foot');
+if(sl35Footer)sl35Footer.textContent='StockLens v3.5 · Portfolio Decision Intelligence · Hypothetical calculations from saved prices and FX · No orders or forecasts · Not financial advice.';
+sl35Render();
+</script>
 </body></html>
