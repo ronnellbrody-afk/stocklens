@@ -821,4 +821,77 @@ const sl32Heading=sl30PortfolioPanel.querySelector('h2');if(sl32Heading)sl32Head
 const sl32Foot=document.querySelector('.foot');if(sl32Foot)sl32Foot.textContent='StockLens v3.2 · Portfolio exposures based on saved prices and FX · Company domicile is not revenue geography · No real-time guarantee · Not financial advice.';
 sl32Render();
 </script>
+
+<style>
+.sl33-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.sl33-grid label{font-size:12px;color:#afbed2;display:grid;gap:6px}.sl33-grid input,.sl33-grid select{width:100%}.sl33-list{display:grid;gap:9px}.sl33-item{border:1px solid #304158;border-radius:11px;padding:12px;background:#0d192b}.sl33-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.sl33-summary>div{border:1px solid #304158;border-radius:11px;padding:12px}.sl33-summary b{display:block;margin-top:6px;font-size:19px}.sl33-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.sl33-note{color:#aabbd0;font-size:12px;line-height:1.6}@media(max-width:450px){.sl33-grid{grid-template-columns:1fr}}
+</style>
+<script>
+'use strict';
+/* v3.3: standalone transaction journal. Never silently mutates legacy holdings. */
+const SL33_KEY='stocklens-performance-v33';
+const sl33Empty=()=>({transactions:[]});
+function sl33Validate(x){
+ if(!x||typeof x!=='object'||!Array.isArray(x.transactions)||x.transactions.length>2000)throw Error('Invalid transaction journal');
+ const ids=new Set();return {transactions:x.transactions.map(t=>{
+  if(!t||typeof t!=='object'||typeof t.id!=='string'||!/^[a-zA-Z0-9_-]{1,70}$/.test(t.id)||ids.has(t.id))throw Error('Invalid or duplicate transaction ID');ids.add(t.id);
+  if(!/^[A-Z0-9.^-]{1,15}$/.test(t.symbol)||!['USD','GBP'].includes(t.currency)||!['buy','sell','dividend'].includes(t.type)||typeof t.date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(t.date)||!Number.isFinite(Date.parse(t.date+'T12:00:00Z')))throw Error('Invalid transaction details');
+  const q=t.quantity,price=t.price,fees=t.fees,fx=t.fx;
+  if(![q,price,fees,fx].every(Number.isFinite)||q<0||q>1e10||price<0||price>1e10||fees<0||fees>1e9||fx<=0||fx>10)throw Error('Invalid transaction amount');
+  if(t.type==='dividend'?(q!==0||price<=0):(q<=0||price<=0))throw Error('Invalid transaction quantity or dividend');
+  return {id:t.id,symbol:t.symbol,currency:t.currency,type:t.type,date:t.date,quantity:q,price,fees,fx};
+ })};
+}
+function sl33Read(){try{return sl33Validate(JSON.parse(localStorage.getItem(SL33_KEY)))}catch{return sl33Empty()}}
+let sl33Data=sl33Read();
+const sl33Panel=document.createElement('div');sl33Panel.className='panel';sl33Panel.id='sl33Panel';
+sl33Panel.innerHTML=`<h2>Investment Performance Intelligence · v3.3</h2><p class="sl33-note">Record buys, sells and cash dividends with the historical GBP-per-USD rate for each transaction. This journal is independent of your v3.2 holdings ledger. Historical FX is entered manually; no trade records are inferred from your existing holdings.</p>
+<div class="sl33-grid"><label>Ticker<input id="sl33Symbol" placeholder="MSFT" maxlength="15" autocapitalize="characters"></label><label>Event<select id="sl33Type"><option value="buy">Buy</option><option value="sell">Sell</option><option value="dividend">Cash dividend</option></select></label><label>Trading currency<select id="sl33Currency"><option value="USD">USD</option><option value="GBP">GBP</option></select></label><label>Transaction date<input id="sl33Date" type="date"></label><label id="sl33QuantityLabel">Units<input id="sl33Quantity" type="number" step="any" min="0" placeholder="2"></label><label id="sl33PriceLabel">Price per unit / dividend total<input id="sl33Price" type="number" step="any" min="0" placeholder="500"></label><label>Fees (transaction currency)<input id="sl33Fees" type="number" step="any" min="0" value="0"></label><label>Historical GBP per USD (on event date)<input id="sl33Fx" type="number" step="any" min="0" value="0.75"></label></div>
+<div class="sl33-actions"><button class="btn primary" id="sl33Add">Record transaction</button><button class="btn" id="sl33Reset">Clear fields</button></div><p id="sl33Status" class="sl33-note" role="status"></p><h3>Performance summary · transaction records only</h3><div id="sl33Summary"></div><h3>Recorded events</h3><div id="sl33Rows" class="sl33-list"></div><p class="sl33-note">FIFO cost allocation is an illustrative accounting convention, not UK HMRC share-pooling tax calculations. Realised returns include entered transaction fees and historical FX. Dividends are cash amounts received before any unrecorded taxes. Unrealised returns use the current holdings price and saved FX where ticker, currency and remaining quantity agree. No time-weighted return, annualised return, tax calculation or total-return index is claimed.</p>`;
+sl30PortfolioPanel.insertAdjacentElement('afterend',sl33Panel);
+const sl33Gbp=n=>Number.isFinite(n)?(n<0?'-':'')+sl30Gbp(Math.abs(n)):'N/A';
+function sl33Calc(){
+ const tx=[...sl33Data.transactions].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
+ const groups=new Map(),issues=[];let realised=0,dividends=0,netCash=0;
+ for(const t of tx){let g=groups.get(t.symbol);if(!g){g={currency:t.currency,lots:[],qty:0,realised:0,dividends:0};groups.set(t.symbol,g)}
+  if(g.currency!==t.currency){issues.push(t.symbol+': mixed transaction currencies');continue}
+  const fx=t.currency==='GBP'?1:t.fx;
+  if(t.type==='dividend'){const amount=(t.price-t.fees)*fx;dividends+=amount;g.dividends+=amount;netCash+=amount;continue}
+  const gross=t.quantity*t.price*fx,fee=t.fees*fx;
+  if(t.type==='buy'){g.lots.push({q:t.quantity,cost:(gross+fee)/t.quantity});g.qty+=t.quantity;netCash-=gross+fee;continue}
+  if(t.quantity>g.qty+1e-7){issues.push(t.symbol+': sell exceeds recorded buys on '+t.date);continue}
+  let remaining=t.quantity,cost=0;
+  while(remaining>1e-8&&g.lots.length){const lot=g.lots[0],take=Math.min(remaining,lot.q);cost+=take*lot.cost;lot.q-=take;remaining-=take;if(lot.q<1e-8)g.lots.shift()}
+  g.qty=Math.max(0,g.qty-t.quantity);const pnl=gross-fee-cost;g.realised+=pnl;realised+=pnl;netCash+=gross-fee;
+ }
+ let unrealised=0,unrealisedAvailable=0;const matches=[];
+ for(const [symbol,g] of groups){const h=sl30Portfolio.holdings.find(x=>x.symbol===symbol);const basis=g.lots.reduce((s,l)=>s+l.q*l.cost,0);
+  if(g.qty>1e-8){if(!h||h.currency!==g.currency||Math.abs(h.quantity-g.qty)>1e-6||!Number.isFinite(sl30Rate())&&h.currency==='USD'){issues.push(symbol+': current holdings do not match journal; unrealised return withheld');matches.push({symbol,qty:g.qty,basis,value:null});continue}
+   const value=h.quantity*h.price*(h.currency==='GBP'?1:sl30Rate());unrealised+=value-basis;unrealisedAvailable++;matches.push({symbol,qty:g.qty,basis,value});
+  }
+ }
+ return {realised,dividends,netCash,unrealised,unrealisedAvailable,matches,issues};
+}
+function sl33Render(){const c=sl33Calc();$('sl33Summary').innerHTML=`<div class="sl33-summary"><div><span class="sl33-note">Realised gains / losses (FIFO)</span><b>${sl33Gbp(c.realised)}</b></div><div><span class="sl33-note">Recorded cash dividends</span><b>${sl33Gbp(c.dividends)}</b></div><div><span class="sl33-note">Unrealised gains / losses</span><b>${c.unrealisedAvailable?sl33Gbp(c.unrealised):'Not reconciled'}</b></div><div><span class="sl33-note">Transactions recorded</span><b>${sl33Data.transactions.length}</b></div></div>${c.issues.length?`<div class="notice" style="margin-top:12px"><b>Reconciliation / data warnings</b><ul>${c.issues.map(x=>`<li>${safe(x)}</li>`).join('')}</ul></div>`:''}<p class="sl33-note">Unrealised figure includes only ${c.unrealisedAvailable} matched open position(s); unmatched positions are excluded. Realised and dividend figures reflect recorded events only.</p>`;
+ $('sl33Rows').innerHTML=sl33Data.transactions.length?[...sl33Data.transactions].sort((a,b)=>b.date.localeCompare(a.date)).map(t=>`<div class="sl33-item"><div style="display:flex;justify-content:space-between;gap:8px"><strong>${safe(t.symbol)} · ${safe(t.type.toUpperCase())}</strong><span class="sl33-note">${safe(t.date)}</span></div><p class="sl33-note">${t.type==='dividend'?'Cash dividend '+sl30Native(t.price,t.currency):t.quantity+' units × '+sl30Native(t.price,t.currency)} · fees ${sl30Native(t.fees,t.currency)} · FX ${t.currency==='GBP'?'N/A (GBP)':t.fx}</p><button class="btn small" data-sl33-delete="${safe(t.id)}">Delete event</button></div>`).join(''):'<div class="empty">No transactions recorded. Existing portfolio holdings remain untouched.</div>';
+}
+function sl33Save(){const valid=sl33Validate(sl33Data);localStorage.setItem(SL33_KEY,JSON.stringify(valid));sl33Data=valid;sl33Render()}
+function sl33Reset(){for(const id of ['sl33Symbol','sl33Quantity','sl33Price'])$(id).value='';$('sl33Fees').value='0';$('sl33Type').value='buy';$('sl33Date').value=new Date().toISOString().slice(0,10);$('sl33Fx').value=sl30Rate()||0.75;sl33Labels()}
+function sl33Labels(){const d=$('sl33Type').value==='dividend';$('sl33Quantity').disabled=d;$('sl33QuantityLabel').firstChild.textContent=d?'Units (not applicable)':'Units';$('sl33PriceLabel').firstChild.textContent=d?'Cash dividend total (native currency)':'Price per unit (native currency)';if(d)$('sl33Quantity').value='0'}
+$('sl33Type').onchange=sl33Labels;$('sl33Reset').onclick=sl33Reset;
+$('sl33Add').onclick=()=>{try{const type=$('sl33Type').value,currency=$('sl33Currency').value,record={id:'t'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,9),symbol:$('sl33Symbol').value.trim().toUpperCase(),type,currency,date:$('sl33Date').value,quantity:type==='dividend'?0:Number($('sl33Quantity').value),price:Number($('sl33Price').value),fees:Number($('sl33Fees').value),fx:currency==='GBP'?1:Number($('sl33Fx').value)};
+ if(!record.date||!$('sl33Price').value||type!=='dividend'&&!$('sl33Quantity').value)throw Error('Enter a date, amount and units.');
+ const next=sl33Validate({transactions:[...sl33Data.transactions,record]});const old=sl33Data;sl33Data=next;const issues=sl33Calc().issues.filter(x=>x.includes('sell exceeds recorded buys'));if(issues.length){sl33Data=old;throw Error(issues[0]+'; add earlier buys first.')}sl33Save();$('sl33Status').textContent=record.symbol+' '+type+' recorded. Existing holdings unchanged.';sl33Reset();
+ }catch(err){$('sl33Status').textContent='Not saved: '+err.message}};
+document.addEventListener('click',e=>{const btn=e.target.closest('[data-sl33-delete]');if(!btn)return;if(!confirm('Delete this recorded transaction? This cannot be undone except by restoring a backup.'))return;sl33Data.transactions=sl33Data.transactions.filter(t=>t.id!==btn.dataset.sl33Delete);sl33Save();$('sl33Status').textContent='Event deleted.'});
+const sl33OldRender=sl30Render;sl30Render=function(){sl33OldRender();sl33Render()};
+const sl33OldBackup=sl26Backup;sl26Backup=function(){const data=sl33OldBackup();data.performanceJournal=sl33Validate(sl33Data);return data};
+const sl33OldValidate=sl26ValidateBackup;sl26ValidateBackup=function(data){const base=sl33OldValidate(data);return {...base,performanceJournal:Object.hasOwn(data,'performanceJournal')?sl33Validate(data.performanceJournal):null}};
+const sl33OldRestore=$('sl26BackupFile').onchange;
+$('sl26BackupFile').onchange=async function(e){const file=e.target.files?.[0];if(!file)return;let journal=null;try{if(file.size>3_000_000)throw Error('Backup exceeds 3MB');const raw=JSON.parse(await file.text());journal=Object.hasOwn(raw,'performanceJournal')?sl33Validate(raw.performanceJournal):null}catch(err){$('sl26Message').textContent='Restore failed: '+err.message;e.target.value='';return}
+ await sl33OldRestore(e);if($('sl26Message').textContent.startsWith('Restored ')){if(journal){try{localStorage.setItem(SL33_KEY,JSON.stringify(journal));sl33Data=journal;$('sl26Message').textContent+=' Transaction journal restored.'}catch(err){$('sl26Message').textContent+=' WARNING: transaction journal restore failed: '+err.message}}else $('sl26Message').textContent+=' Older backup: current transaction journal retained.';sl33Render()}
+};
+$('sl26BackupBtn').textContent='Download full backup (including transactions)';
+const sl33Foot=document.querySelector('.foot');if(sl33Foot)sl33Foot.textContent='StockLens v3.3 · Manual investment transaction journal · FIFO is not a UK tax calculation · No automatic trading or real-time guarantee · Not investment advice.';
+document.title='StockLens v3.3 | Investment Performance Intelligence';sl33Reset();sl33Render();
+</script>
 </body></html>
