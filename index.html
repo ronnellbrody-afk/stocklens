@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1220"><title>StockLens v3.0 | Portfolio Intelligence</title><style>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1220"><title>StockLens v3.2 | Portfolio Exposure Intelligence</title><style>
 :root{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:#e9effa;background:#0b1220}*{box-sizing:border-box}body{margin:0}button,input,select{font:inherit}button{cursor:pointer}.shell{max-width:1100px;margin:auto;padding:20px 16px 90px}.top{display:flex;justify-content:space-between;align-items:center;gap:10px}.brand{font-weight:850;font-size:23px;letter-spacing:-.7px}.brand span{color:#5bd8b0}.tag,.muted{color:#93a4bd}.tag{font-size:12px}.hero{margin:26px 0}.hero h1{font-size:clamp(26px,5vw,39px);margin:0 0 8px}.hero p{color:#a4b4ca;max-width:680px;line-height:1.5}.tabs{display:flex;gap:8px;overflow-x:auto;padding:3px 0 15px}.tabs button,.btn{border:1px solid #304158;border-radius:11px;background:#17243a;color:#eaf2ff;padding:11px 15px}.tabs button.active,.btn.primary{background:#1a765e;border-color:#32b58d;color:white}.panel{background:#111e31;border:1px solid #2a3b52;border-radius:17px;padding:18px;margin-bottom:16px}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}.grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}h2{font-size:19px;margin:0 0 14px}h3{font-size:16px;margin:0 0 9px}.small{font-size:12px}.kpi{font-size:27px;font-weight:800}.green{color:#57d9ad}.amber{color:#f5bd68}.red{color:#ff828b}.inputrow{display:flex;gap:9px;flex-wrap:wrap}input,select{min-width:0;background:#0c1728;border:1px solid #354862;color:#eaf2ff;border-radius:10px;padding:11px}input{flex:1}.results{display:grid;gap:10px}.stock{border:1px solid #30435c;background:#132238;border-radius:13px;padding:14px;display:flex;justify-content:space-between;gap:12px;align-items:center}.stock strong{display:block}.stock .small{margin-top:5px}.score{font-size:24px;font-weight:800}.pill{font-size:11px;padding:5px 8px;border-radius:99px;background:#263d4b;display:inline-block;margin-top:5px}.meter{height:8px;background:#29374b;border-radius:9px;overflow:hidden;margin:8px 0 14px}.meter div{height:100%;background:#39b98e}.metric{display:flex;justify-content:space-between;gap:12px;margin-top:12px}.notice{border-left:3px solid #e8ae56;background:#342b20;padding:12px;border-radius:7px;font-size:13px;line-height:1.5}.hidden{display:none!important}.actions{display:flex;gap:8px;flex-wrap:wrap}.btn.small{padding:8px 11px;font-size:12px}.empty{padding:20px;color:#9eafc4;text-align:center}.foot{font-size:12px;color:#879bb6;line-height:1.6}.filters{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:14px}.filters select{flex:1;min-width:130px}.weights label{display:flex;justify-content:space-between;font-size:13px;margin-top:12px}.weights input{width:100%;padding:0;accent-color:#48c9a1}.comparetable{width:100%;border-collapse:collapse;font-size:13px}.comparetable td,.comparetable th{padding:10px;border-bottom:1px solid #2a3b52;text-align:left}.scroll{overflow-x:auto}.danger{color:#ff939a}.ok{color:#70dfb7}@media(max-width:720px){.grid,.grid.two{grid-template-columns:1fr}.top .tag{display:none}.panel{padding:15px}.shell{padding:15px 12px 90px}.stock{align-items:flex-start}.hero{margin:20px 0}}
 </style></head><body><main class="shell"><header class="top"><div class="brand">◈ Stock<span>Lens</span></div><div class="tag">Research dashboard · Demo dataset</div></header><section class="hero"><h1>Find stronger businesses.<br><span class="green">Spot risks earlier.</span></h1><p>Screen financial quality, debt, cash generation and valuation. All sample figures below are <b>fictional demonstration inputs</b>, not market data or investment recommendations.</p></section><nav class="tabs" aria-label="Sections"><button class="active" data-tab="discover">Discover</button><button data-tab="analyse">Analyse</button><button data-tab="compare">Compare</button><button data-tab="watchlist">Watchlist</button><button data-tab="settings">Settings</button></nav><div class="notice" style="margin-bottom:16px"><b>DEMO MODE:</b> Sample companies and all financial metrics are synthetic and deliberately not presented as current financial facts. No live prices or financial statements are connected. Scores are research triage only.</div>
 <section id="discover" class="page"><div class="grid"><div class="panel"><div class="muted small">Companies in demo universe</div><div class="kpi" id="count">0</div></div><div class="panel"><div class="muted small">Pass selected filters</div><div class="kpi green" id="passes">0</div></div><div class="panel"><div class="muted small">Saved to watchlist</div><div class="kpi" id="saved">0</div></div></div><div class="panel"><h2>Discover stocks</h2><div class="inputrow" style="margin-bottom:12px"><input id="query" placeholder="Search ticker, company or sector" aria-label="Search stocks"></div><div class="filters"><select id="region"><option value="all">All markets</option><option value="US">United States</option><option value="UK">United Kingdom</option></select><select id="sector"><option value="all">All sectors</option></select><select id="minScore"><option value="0">Any score</option><option value="55">55+ Watchlist</option><option value="70">70+ Investigate</option><option value="85">85+ Strong</option></select><select id="debt"><option value="all">Any leverage</option><option value="2">Net debt / EBITDA ≤ 2</option><option value="1">Net debt / EBITDA ≤ 1</option></select><select id="fcf"><option value="all">Any cash flow</option><option value="positive">Positive FCF only</option></select></div><div id="discoveryResults" class="results"></div></div></section>
@@ -706,5 +706,119 @@ $('sl26BackupFile').onchange=async function(e){await sl31PriorRestore(e);sl31Res
 const sl31Heading=sl30PortfolioPanel.querySelector('h2');if(sl31Heading)sl31Heading.textContent='Portfolio Intelligence · v3.1.1';
 const sl31Foot=document.querySelector('.foot');
 if(sl31Foot)sl31Foot.textContent='StockLens v3.1.1 · On-demand FMP profile prices and fallback reference FX · Quote timestamps not verified · No automatic updates or trading · Not investment advice.';
+</script>
+
+<style>
+.sl32-bars{display:grid;gap:9px;margin:12px 0}.sl32-bar-label{display:flex;justify-content:space-between;gap:12px;font-size:13px}.sl32-track{height:10px;border-radius:8px;background:#28394d;overflow:hidden}.sl32-fill{height:100%;background:#5db9a5}.sl32-item{border:1px solid #304158;border-radius:12px;padding:12px;margin:10px 0}.sl32-item .sl30-grid{margin-top:10px}.sl32-help{font-size:12px;color:#a4b4ca;line-height:1.55}.sl32-select{width:100%}
+</style>
+<script>
+'use strict';
+/* v3.2: portfolio exposure intelligence. Classification metadata is separate from holdings. */
+const SL32_KEY='stocklens-exposure-v32';
+const sl32Date=()=>new Date().toISOString().slice(0,10);
+const sl32Clean=(x,max=100)=>typeof x==='string'?x.trim().slice(0,max):'';
+function sl32Validate(x){
+ if(!x||typeof x!=='object'||Array.isArray(x))throw Error('Invalid exposure data');
+ const entries=Object.entries(x);if(entries.length>100)throw Error('Too many classifications');
+ const out={};
+ for(const [symbol,v] of entries){
+  if(!/^[A-Z0-9.^-]{1,15}$/.test(symbol)||!v||typeof v!=='object'||Array.isArray(v))throw Error('Invalid classification');
+  const sector=sl32Clean(v.sector,80),country=sl32Clean(v.country,80),source=sl32Clean(v.source,30),checked=sl32Clean(v.checked,30);
+  if(!['FMP profile','Manual'].includes(source))throw Error('Invalid classification source');
+  out[symbol]={sector,country,source,checked};
+ }
+ return out;
+}
+let sl32Data={};try{sl32Data=sl32Validate(JSON.parse(localStorage.getItem(SL32_KEY)||'{}'))}catch{}
+const sl32Panel=document.createElement('div');sl32Panel.className='panel';sl32Panel.id='sl32Exposure';
+sl32Panel.innerHTML=`<h2>Portfolio Exposure Intelligence · v3.2</h2>
+<p class="sl32-help">Allocation uses your saved holding prices and USD→GBP reference FX. Sector and country are company classifications, <b>not</b> revenue exposure. Trading currency is not the same as economic currency risk. Missing classifications remain Unknown.</p>
+<div class="sl30-actions"><button class="btn primary" id="sl32Fetch">Check company classifications</button><button class="btn" id="sl32Refresh">Refresh exposure dashboard</button></div>
+<p id="sl32Status" class="sl32-help" role="status">Company classifications are optional. Review FMP results or enter your own.</p>
+<div id="sl32Summary"></div><div class="grid two" style="margin-top:14px"><div><h3>Sector allocation</h3><div id="sl32Sectors"></div></div><div><h3>Company domicile</h3><div id="sl32Countries"></div></div></div>
+<h3 style="margin-top:16px">Trading currency</h3><div id="sl32Currencies"></div>
+<h3 style="margin-top:18px">Classification ledger</h3><div id="sl32Ledger"></div>
+<p class="sl32-help">FMP company profiles may have missing, ambiguous or stale classifications. Country indicates reported company domicile, not where sales, assets or profits originate. Classification data is stored only in this browser and included in full backups. Concentration flags are illustrative screening thresholds, not personal investment limits.</p>`;
+sl30PortfolioPanel.insertAdjacentElement('afterend',sl32Panel);
+const sl32Status=$('sl32Status');
+function sl32Save(){localStorage.setItem(SL32_KEY,JSON.stringify(sl32Validate(sl32Data)));sl32Render()}
+function sl32Group(rows,key,total){
+ const m=new Map();for(const x of rows){const label=x[key]||'Unknown';m.set(label,(m.get(label)||0)+x.value)}
+ return [...m].sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value,pct:total>0?100*value/total:0}));
+}
+function sl32Bars(id,groups){$(id).innerHTML=groups.length?'<div class="sl32-bars">'+groups.map(g=>`<div><div class="sl32-bar-label"><span>${safe(g.name)}</span><b>${g.pct.toFixed(1)}% · ${sl30Gbp(g.value)}</b></div><div class="sl32-track"><div class="sl32-fill" style="width:${Math.min(100,g.pct).toFixed(2)}%"></div></div></div>`).join('')+'</div>':'<p class="sl32-help">No allocation data available.</p>'}
+function sl32Render(){
+ const holdings=sl30Portfolio.holdings,usd=holdings.some(h=>h.currency==='USD'),rate=sl30Rate();
+ if(usd&&rate===null){$('sl32Summary').innerHTML='<div class="sl30-warning">Enter a USD→GBP rate before combined allocation can be calculated.</div>';for(const id of ['sl32Sectors','sl32Countries','sl32Currencies'])$(id).innerHTML='';sl32Ledger();return}
+ const rows=holdings.map(h=>({symbol:h.symbol,value:sl30Value(h),sector:sl32Data[h.symbol]?.sector||'Unknown',country:sl32Data[h.symbol]?.country||'Unknown',currency:h.currency}));
+ const total=rows.reduce((a,b)=>a+b.value,0),largest=rows.length?rows.reduce((a,b)=>a.value>b.value?a:b):null;
+ const sectors=sl32Group(rows,'sector',total),countries=sl32Group(rows,'country',total),currencies=sl32Group(rows,'currency',total);
+ const unknownSector=sectors.find(x=>x.name==='Unknown')?.pct||0,unknownCountry=countries.find(x=>x.name==='Unknown')?.pct||0;
+ const sectorTop=sectors.find(x=>x.name!=='Unknown');
+ const flags=[];
+ if(largest&&total>0&&largest.value/total>.3)flags.push(`${largest.symbol} represents ${(100*largest.value/total).toFixed(1)}% of holdings (30% illustrative threshold).`);
+ if(sectorTop&&sectorTop.pct>50)flags.push(`${sectorTop.name} accounts for ${sectorTop.pct.toFixed(1)}% of portfolio value (50% illustrative sector threshold).`);
+ if(unknownSector||unknownCountry)flags.push(`Unclassified exposure: sector ${unknownSector.toFixed(1)}%, domicile ${unknownCountry.toFixed(1)}%.`);
+ $('sl32Summary').innerHTML=`<div class="sl30-summary"><div class="sl30-tile"><span class="sl30-muted">Portfolio value (GBP)</span><b>${sl30Gbp(total)}</b></div><div class="sl30-tile"><span class="sl30-muted">Largest position</span><b>${largest&&total>0?safe(largest.symbol)+' · '+(100*largest.value/total).toFixed(1)+'%':'N/A'}</b></div><div class="sl30-tile"><span class="sl30-muted">Classified sectors</span><b>${rows.filter(x=>x.sector!=='Unknown').length} / ${rows.length}</b></div><div class="sl30-tile"><span class="sl30-muted">Classified domiciles</span><b>${rows.filter(x=>x.country!=='Unknown').length} / ${rows.length}</b></div></div>${flags.length?`<div class="sl30-warning">${flags.map(safe).join('<br>')}</div>`:''}`;
+ sl32Bars('sl32Sectors',sectors);sl32Bars('sl32Countries',countries);sl32Bars('sl32Currencies',currencies);sl32Ledger();
+}
+function sl32Ledger(){
+ $('sl32Ledger').innerHTML=sl30Portfolio.holdings.length?sl30Portfolio.holdings.map(h=>{
+  const d=sl32Data[h.symbol]||{};
+  return `<div class="sl32-item"><strong>${safe(h.symbol)}</strong><div class="sl32-help">${safe(d.source||'Not classified')}${d.checked?' · checked '+safe(d.checked):''}</div>
+  <div class="sl30-grid"><label>Sector<input data-sl32-sector="${safe(h.symbol)}" value="${safe(d.sector||'')}" maxlength="80" placeholder="Unknown"></label><label>Company domicile<input data-sl32-country="${safe(h.symbol)}" value="${safe(d.country||'')}" maxlength="80" placeholder="Unknown"></label></div>
+  <div class="sl30-actions"><button class="btn small" data-sl32-save="${safe(h.symbol)}">Save classification</button><button class="btn small" data-sl32-clear="${safe(h.symbol)}">Clear</button></div></div>`;
+ }).join(''):'<p class="sl32-help">Add a holding to see portfolio exposures.</p>';
+}
+$('sl32Fetch').onclick=async()=>{
+ const btn=$('sl32Fetch'),holdings=[...sl30Portfolio.holdings];if(!holdings.length){sl32Status.textContent='Add a holding first.';return}
+ btn.disabled=true;sl32Status.textContent='Checking FMP company profiles…';let updated=0;const errors=[];
+ try{
+  for(const h of holdings){
+   try{
+    const data=await slGet(h.symbol,'profile'),p=data[0]||{},sector=sl32Clean(p.sector,80),country=sl32Clean(p.country,80);
+    if(!sector&&!country){errors.push(h.symbol+': no sector or country returned');continue}
+    const prev=sl32Data[h.symbol]||{};
+    if(prev.source==='Manual'){errors.push(h.symbol+': manual classification retained');continue}
+    sl32Data[h.symbol]={sector:sector||prev.sector||'',country:country||prev.country||'',source:'FMP profile',checked:sl32Date()};updated++;
+   }catch(err){errors.push(h.symbol+': '+String(err.message).slice(0,120))}
+  }
+  sl32Save();sl32Status.textContent=`Updated ${updated} classification(s). ${errors.length?errors.join(' | '):'Review classifications below.'}`;
+ }finally{btn.disabled=false}
+};
+$('sl32Refresh').onclick=()=>{sl32Render();sl32Status.textContent='Exposure calculated from saved holdings and FX; no price refresh performed.'};
+document.addEventListener('click',e=>{
+ const saveBtn=e.target.closest('[data-sl32-save]'),clearBtn=e.target.closest('[data-sl32-clear]');if(!saveBtn&&!clearBtn)return;
+ const symbol=(saveBtn||clearBtn).dataset.sl32Save||(saveBtn||clearBtn).dataset.sl32Clear;
+ if(!sl30Portfolio.holdings.some(h=>h.symbol===symbol))return;
+ if(clearBtn){delete sl32Data[symbol];sl32Save();sl32Status.textContent=symbol+' classification cleared.';return}
+ const sector=$('sl32Ledger').querySelector(`[data-sl32-sector="${symbol}"]`)?.value||'';
+ const country=$('sl32Ledger').querySelector(`[data-sl32-country="${symbol}"]`)?.value||'';
+ if(!sector.trim()&&!country.trim()){delete sl32Data[symbol]}else sl32Data[symbol]={sector:sl32Clean(sector,80),country:sl32Clean(country,80),source:'Manual',checked:sl32Date()};
+ sl32Save();sl32Status.textContent=symbol+' classification saved.';
+});
+const sl32OldRender=sl30Render;sl30Render=function(){sl32OldRender();sl32Render()};
+/* Include classifications in established v5 backup envelope to retain older restore compatibility. */
+const sl32OldBackup=sl26Backup;
+sl26Backup=function(){const data=sl32OldBackup();data.exposureClassifications=sl32Validate(sl32Data);return data};
+const sl32OldValidate=sl26ValidateBackup;
+sl26ValidateBackup=function(data){const validated=sl32OldValidate(data);return {...validated,exposureClassifications:data&&Object.hasOwn(data,'exposureClassifications')?sl32Validate(data.exposureClassifications):null}};
+const sl32OldRestore=$('sl26BackupFile').onchange;
+$('sl26BackupFile').onchange=async function(e){
+ const file=e.target.files?.[0];if(!file)return;
+ let classifications=null;
+ try{if(file.size>3_000_000)throw Error('Backup exceeds 3MB');const raw=JSON.parse(await file.text());classifications=Object.hasOwn(raw,'exposureClassifications')?sl32Validate(raw.exposureClassifications):null}
+ catch(err){$('sl26Message').textContent='Restore failed: '+err.message;e.target.value='';return}
+ await sl32OldRestore(e);
+ if($('sl26Message').textContent.startsWith('Restored ')){
+  if(classifications!==null){try{localStorage.setItem(SL32_KEY,JSON.stringify(classifications));sl32Data=classifications;$('sl26Message').textContent+=' Exposure classifications restored.'}catch(err){$('sl26Message').textContent+=' WARNING: exposure restore failed: '+err.message}}
+  else $('sl26Message').textContent+=' Older backup: existing exposure classifications retained.';
+  sl32Render();
+ }
+};
+$('sl26BackupBtn').textContent='Download full backup (including portfolio and exposures)';
+const sl32Heading=sl30PortfolioPanel.querySelector('h2');if(sl32Heading)sl32Heading.textContent='Portfolio Intelligence · v3.2';
+const sl32Foot=document.querySelector('.foot');if(sl32Foot)sl32Foot.textContent='StockLens v3.2 · Portfolio exposures based on saved prices and FX · Company domicile is not revenue geography · No real-time guarantee · Not financial advice.';
+sl32Render();
 </script>
 </body></html>
