@@ -1297,7 +1297,7 @@ document.title='StockLens v4.0 | Performance Intelligence';const sl40Footer=docu
 </style><script>
 /* StockLens v4.1 — independently recheck v4.0 cash flow maths; no fabricated prices. */
 const sl41Panel=document.createElement('div');sl41Panel.className='panel';sl41Panel.id='sl41Panel';
-sl41Panel.innerHTML=`<h2>Performance Validation · v4.1</h2><p class="sl39-note">Independent cross-check of v4.0 calculations, cash-flow signs, transaction dates, CSV coverage and sensitivity to estimated FX. This does not certify completeness of the broker history.</p><div class="actions"><button class="btn primary" id="sl41Validate">Validate performance</button><button class="btn" id="sl41Export">Export validation JSON</button></div><div id="sl41Output" style="margin-top:14px" class="sl39-note">Run the v4.0 audit with four FX rates, then validate here.</div>`;
+sl41Panel.innerHTML=`<h2>Performance Validation · v4.1.1</h2><p class="sl39-note">Independent cross-check of v4.0 calculations, cash-flow signs, transaction dates, CSV coverage and sensitivity to estimated FX. This does not certify completeness of the broker history.</p><div class="actions"><button class="btn primary" id="sl41Validate">Validate performance</button><button class="btn" id="sl41Export">Export validation JSON</button></div><div id="sl41Output" style="margin-top:14px" class="sl39-note">Run the v4.0 audit with four FX rates, then validate here.</div>`;
 sl40Panel.insertAdjacentElement('afterend',sl41Panel);
 let sl41Last=null;
 const sl41Pounds=n=>Number.isFinite(n)?'£'+n.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2}):'N/A';
@@ -1306,7 +1306,7 @@ function sl41IndependentIRR(flows){if(!flows.some(x=>x.value<0)||!flows.some(x=>
 function sl41Validate(){const el=$('sl41Output');sl41Last=null;if(!sl40AuditData){el.innerHTML='<div class="sl41-status">Complete the v4.0 cash-flow audit with all FX rates first.</div>';return}
 const d=sl40AuditData,all=sl40Flows(),used=all.filter(x=>x.date<=d.valuationDate),rates=d.fxRates||{},issues=[],warnings=[];
 const converted=used.map(x=>{const fx=x.currency==='GBP'?1:rates[x.id];return {...x,gbp:Math.abs(x.amount)*fx}});
-if(used.some(x=>!Number.isFinite(x.amount)||!Number.isFinite(x.gbp)))issues.push('Invalid transaction amount or missing FX');
+if(converted.some(x=>!Number.isFinite(x.amount)||!Number.isFinite(x.gbp)||x.gbp<0))issues.push('Invalid transaction amount or missing FX');
 if(used.some(x=>!/^\d{4}-\d{2}-\d{2}$/.test(x.date)))issues.push('Unparseable transaction date');
 if(used.some(x=>x.action==='Deposit'&&x.amount<=0||x.action==='Withdrawal'&&x.amount>=0))issues.push('Unexpected deposit/withdrawal signs');
 const dep=converted.filter(x=>x.action==='Deposit').reduce((s,x)=>s+x.gbp,0),wd=converted.filter(x=>x.action==='Withdrawal').reduce((s,x)=>s+x.gbp,0),profit=d.endingValueGbp+wd-dep;
@@ -1332,6 +1332,6 @@ sl41Last={format:'stocklens-v41-validation',valuationDate:d.valuationDate,indepe
 $('sl41Validate').onclick=sl41Validate;
 $('sl41Export').onclick=()=>{if(!sl41Last){$('sl41Output').textContent='Run validation before exporting.';return}const blob=new Blob([JSON.stringify(sl41Last,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='stocklens-v4.1-validation.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
 const sl41OldAudit=sl40Audit;sl40Audit=function(){sl41Last=null;$('sl41Output').textContent='Audit updated. Tap Validate performance again.';return sl41OldAudit()};$('sl40Audit').onclick=sl40Audit;
-document.title='StockLens v4.1 | Performance Validation';const sl41Foot=document.querySelector('.foot');if(sl41Foot)sl41Foot.textContent='StockLens v4.1 · Independent performance arithmetic and FX sensitivity · Provisional results, not financial advice.';
+document.title='StockLens v4.1.1 | Performance Validation';const sl41Foot=document.querySelector('.foot');if(sl41Foot)sl41Foot.textContent='StockLens v4.1 · Independent performance arithmetic and FX sensitivity · Provisional results, not financial advice.';
 </script>
 </body></html>
