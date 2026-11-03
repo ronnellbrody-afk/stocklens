@@ -1200,4 +1200,61 @@ $('sl38Export').onclick=()=>{
 document.title='StockLens v3.8 | Trading 212 Reconciliation';
 const sl38Footer=document.querySelector('.foot');if(sl38Footer)sl38Footer.textContent='StockLens v3.8 · Local, temporary Trading 212 CSV review · No automatic trade or portfolio migration · Not financial advice.';
 </script>
+<style>
+.sl39-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.sl39-kpi{background:#0c1728;border:1px solid #304158;border-radius:12px;padding:14px}.sl39-kpi b{display:block;font-size:22px;margin-top:5px}.sl39-kpi span{font-size:12px;color:#a4b4ca}.sl39-table{width:100%;border-collapse:collapse;font-size:12px}.sl39-table td,.sl39-table th{padding:10px 8px;border-bottom:1px solid #304158;text-align:left}.sl39-table input{width:110px;min-width:95px;padding:8px}.sl39-note{font-size:12px;color:#a4b4ca;line-height:1.6}@media(max-width:600px){.sl39-grid{grid-template-columns:1fr}}
+</style><script>
+/* StockLens v3.9: local-only, read-only holdings and cash reconciliation. */
+const sl39Panel=document.createElement('div');sl39Panel.className='panel';sl39Panel.id='sl39Panel';
+sl39Panel.innerHTML=`<h2>Portfolio Reconciliation · v3.9</h2><p class="sl39-note">Import a Trading 212 CSV using the v3.8 panel above. This module reconstructs net traded shares and compares them with quantities you enter from your latest broker statement. Enter GBP market values and GBP/USD cash balances to inspect your <b>statement-date allocation</b>. All reference inputs stay in this browser session and are cleared on refresh. No holdings, snapshots or settings are changed.</p>
+<div id="sl39Status" class="sl39-note">Waiting for a Trading 212 CSV import.</div><div id="sl39Summary"></div>
+<h3 style="margin-top:16px">Reconcile share quantities</h3><div id="sl39Holdings" class="scroll"></div>
+<h3 style="margin-top:18px">Cash and statement valuation</h3><div class="sl39-grid"><label class="sl39-note">GBP cash (£)<input id="sl39Gbp" type="number" min="0" step="0.01" placeholder="From statement" style="width:100%"></label><label class="sl39-note">USD cash ($)<input id="sl39Usd" type="number" min="0" step="0.01" placeholder="From statement" style="width:100%"></label><label class="sl39-note">USD cash GBP equivalent (£)<input id="sl39UsdGbp" type="number" min="0" step="0.01" placeholder="Broker statement conversion" style="width:100%"></label><label class="sl39-note">Broker account total (£), optional<input id="sl39BrokerTotal" type="number" min="0" step="0.01" placeholder="From same dated statement" style="width:100%"></label></div>
+<div class="actions" style="margin:15px 0"><button class="btn primary" id="sl39Calculate">Calculate reconciliation</button><button class="btn" id="sl39Export">Export reconciliation JSON</button></div><div id="sl39Results"></div><p class="sl39-note">Share reconstruction assumes buy and sell actions represent executed transactions. Corporate actions, transfers, incomplete exports and fractional rounding may cause differences. Do not treat the CSV's total transaction amounts as current values. The app does not calculate lifetime investment returns or convert historical USD flows without date-matched FX rates.</p>`;
+sl38Panel.insertAdjacentElement('afterend',sl39Panel);
+const sl39Symbols=['GLT5','BRK.B','RELX','VWRP','NEM'];
+let sl39Last=null;
+const sl39Fmt=(n,d=2)=>Number.isFinite(n)?n.toLocaleString('en-GB',{minimumFractionDigits:d,maximumFractionDigits:d}):'N/A';
+function sl39Positions(){
+ const m=new Map();const ignored=[];
+ for(const r of sl38Rows){const action=String(r.Action||'').toLowerCase();if(!/\b(buy|sell)\b/.test(action))continue;
+ const symbol=String(r.Ticker||'').trim().toUpperCase();const shares=Number(r['No. of shares']);
+ if(!symbol||!Number.isFinite(shares)||shares<=0){ignored.push(r);continue}
+ const signed=/\bbuy\b/.test(action)?shares:-shares;
+ m.set(symbol,(m.get(symbol)||0)+signed);
+ }
+ return {positions:m,ignored};
+}
+function sl39Render(){
+ const status=$('sl39Status'),box=$('sl39Holdings');
+ if(!sl38Rows.length){status.textContent='Waiting for a Trading 212 CSV import. Select the consolidated CSV in the panel above.';box.innerHTML='';$('sl39Summary').innerHTML='';$('sl39Results').innerHTML='';sl39Last=null;return}
+ const {positions,ignored}=sl39Positions();const others=[...positions.entries()].filter(([t,q])=>!sl39Symbols.includes(t)&&Math.abs(q)>0.000001);
+ status.textContent=`Imported ${sl38Rows.length.toLocaleString('en-GB')} transactions. Historical share quantities are provisional. ${others.length} other ticker(s) have nonzero reconstructed quantities; ${ignored.length} trade(s) could not be assigned.`;
+ box.innerHTML=`<table class="sl39-table"><thead><tr><th>Ticker</th><th>CSV net shares</th><th>Broker shares</th><th>Broker value (£)</th></tr></thead><tbody>${sl39Symbols.map(t=>`<tr><td><b>${safe(t)}</b></td><td>${sl39Fmt(positions.get(t)||0,8)}</td><td><input type="number" min="0" step="any" data-sl39-qty="${safe(t)}" placeholder="Shares"></td><td><input type="number" min="0" step="0.01" data-sl39-value="${safe(t)}" placeholder="£ value"></td></tr>`).join('')}</tbody></table>`;
+ $('sl39Summary').innerHTML=`<div class="sl39-grid"><div class="sl39-kpi"><span>Unique imported records</span><b>${sl38Rows.length.toLocaleString('en-GB')}</b></div><div class="sl39-kpi"><span>Other nonzero ticker positions</span><b>${others.length}</b></div></div>${others.length?`<p class="sl39-note">Other historical net quantities: ${others.slice(0,15).map(([t,q])=>safe(t)+' ('+sl39Fmt(q,6)+')').join(', ')}${others.length>15?' …':''}. These may be old positions, renamed tickers or incomplete history and need investigation.</p>`:''}`;
+}
+function sl39Calculate(){
+ if(!sl38Rows.length){$('sl39Results').textContent='Import a CSV first.';return}
+ const {positions}=sl39Positions();const holdings=[];let valid=true;
+ for(const t of sl39Symbols){const qi=sl39Panel.querySelector(`[data-sl39-qty="${t}"]`),vi=sl39Panel.querySelector(`[data-sl39-value="${t}"]`);
+ const q=qi.value.trim()===''?null:Number(qi.value),v=vi.value.trim()===''?null:Number(vi.value);
+ if((q!==null&&(!Number.isFinite(q)||q<0))||(v!==null&&(!Number.isFinite(v)||v<0))){valid=false;break}
+ const csv=positions.get(t)||0;holdings.push({ticker:t,csvShares:csv,brokerShares:q,brokerValueGbp:v,difference:q===null?null:q-csv});
+ }
+ const read=id=>{const x=$(id).value.trim();return x===''?null:Number(x)};
+ const gbp=read('sl39Gbp'),usd=read('sl39Usd'),usdGbp=read('sl39UsdGbp'),broker=read('sl39BrokerTotal');
+ if(!valid||[gbp,usd,usdGbp,broker].some(x=>x!==null&&(!Number.isFinite(x)||x<0))){$('sl39Results').textContent='Enter nonnegative, valid numbers only.';return}
+ const complete=holdings.every(h=>h.brokerValueGbp!==null),holdingsValue=complete?holdings.reduce((a,h)=>a+h.brokerValueGbp,0):null;
+ const cashComplete=gbp!==null&&usdGbp!==null;
+ const calculated=complete&&cashComplete?holdingsValue+gbp+usdGbp:null;
+ const delta=calculated!==null&&broker!==null?calculated-broker:null;
+ const mismatch=holdings.filter(h=>h.difference!==null&&Math.abs(h.difference)>0.000001);
+ sl39Last={format:'stocklens-v39-reconciliation',date:new Date().toISOString(),importedRows:sl38Rows.length,holdings,gbpCash:gbp,usdCash:usd,usdCashGbpEquivalent:usdGbp,holdingsValueGbp:holdingsValue,calculatedAccountGbp:calculated,brokerAccountGbp:broker,deltaGbp:delta,shareMismatches:mismatch.map(h=>h.ticker)};
+ const stats=[['Holdings value',holdingsValue===null?'Awaiting values':'£'+sl39Fmt(holdingsValue)],['Cash (GBP equivalent)',cashComplete?'£'+sl39Fmt(gbp+usdGbp):'Awaiting cash'],['Calculated account value',calculated===null?'Incomplete':'£'+sl39Fmt(calculated)],['Difference vs broker total',delta===null?'Not available':'£'+sl39Fmt(delta)]];
+ $('sl39Results').innerHTML=`<div class="sl39-grid">${stats.map(([a,b])=>`<div class="sl39-kpi"><span>${safe(a)}</span><b>${safe(b)}</b></div>`).join('')}</div><p class="sl39-note">${mismatch.length?`Quantity differences for ${safe(mismatch.map(h=>h.ticker).join(', '))}; check corporate actions, export completeness and symbol changes.`:'No quantity mismatches detected among broker quantities supplied (or none supplied yet).'} ${delta!==null?(Math.abs(delta)<=0.02?'Account total reconciles within £0.02.':'Account total does not reconcile; check same-date values and currency conversion.'):'Enter all holding values, GBP cash, USD cash GBP equivalent and a broker total to reconcile.'}</p>${calculated!==null?`<h3>Allocation by broker market value</h3><div class="scroll"><table class="sl39-table"><thead><tr><th>Asset</th><th>Value (£)</th><th>Share of total</th></tr></thead><tbody>${[...holdings.map(h=>[h.ticker,h.brokerValueGbp]),['Cash GBP',gbp],['Cash USD (GBP eq.)',usdGbp]].map(([t,v])=>`<tr><td>${safe(t)}</td><td>${sl39Fmt(v)}</td><td>${calculated>0?sl39Fmt(100*v/calculated,1)+'%':'N/A'}</td></tr>`).join('')}</tbody></table></div>`:''}`;
+}
+const sl39OldRender=sl38Render;sl38Render=function(){sl39OldRender();sl39Render()};
+$('sl39Calculate').onclick=sl39Calculate;
+$('sl39Export').onclick=()=>{if(!sl39Last){$('sl39Results').textContent='Calculate reconciliation before exporting.';return}const blob=new Blob([JSON.stringify(sl39Last,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='stocklens-v3.9-reconciliation.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+sl39Render();document.title='StockLens v3.9 | Portfolio Reconciliation';const sl39Footer=document.querySelector('.foot');if(sl39Footer)sl39Footer.textContent='StockLens v3.9 · Local read-only Trading 212 share and cash reconciliation · No historical return calculation · Not financial advice.';
+</script>
 </body></html>
