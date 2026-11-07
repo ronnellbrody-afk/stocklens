@@ -1349,4 +1349,44 @@ $('sl42Run').onclick=()=>{if(!sl38Rows.length){$('sl42Status').textContent='Impo
 $('sl40EndValue').addEventListener('change',sl42Save);$('sl40EndDate').addEventListener('change',sl42Save);
 
 </script>
-</body></html>
+<style>
+.sl42-badge{display:inline-block;padding:5px 10px;border:1px solid #805f32;border-radius:20px;color:#f5bd68;font-size:12px}.sl42-table{width:100%;border-collapse:collapse;font-size:12px}.sl42-table th,.sl42-table td{padding:10px 8px;border-bottom:1px solid #304158;text-align:left;white-space:nowrap}.sl42-exception{padding:13px;border:1px solid #304158;border-radius:12px;margin:12px 0}.sl42-exception h3{margin:0 0 8px}.sl42-muted{font-size:12px;color:#a4b4ca;line-height:1.6}
+</style><script>
+/* StockLens v4.2 — read-only portfolio integrity diagnostics. */
+const sl42IntegrityPanel=document.createElement('div');sl42IntegrityPanel.className='panel';sl42IntegrityPanel.id='sl42IntegrityPanel';
+sl42IntegrityPanel.innerHTML=`<h2>Portfolio Data Integrity · v4.2</h2><p class="sl42-muted">Audits imported Trading 212 activity for unexplained net share quantities, transaction gaps and invalid trade records. This is a diagnostic, not proof of missing broker transactions or corporate actions. No holdings, journal or research records are changed.</p><div class="actions"><button class="btn primary" id="sl42IntegrityRun">Inspect imported history</button><button class="btn" id="sl42IntegrityExport" disabled>Export integrity report JSON</button></div><div id="sl42IntegrityOutput" style="margin-top:15px"><p class="sl42-muted">Import your consolidated CSV above, then inspect the history.</p></div>`;
+sl41Panel.insertAdjacentElement('afterend',sl42IntegrityPanel);
+let sl42IntegrityLast=null;
+const sl42N=n=>Number(n).toLocaleString('en-GB',{maximumFractionDigits:8});
+function sl42IntegrityAudit(){
+ const el=$('sl42IntegrityOutput');sl42IntegrityLast=null;$('sl42IntegrityExport').disabled=true;
+ if(!sl38Rows.length){el.innerHTML='<div class="notice">Import the Trading 212 consolidated CSV in the v3.8 section first.</div>';return}
+ const positions=new Map(),trades=new Map(),issues=[],dates=[],actions={},currencies=new Set();
+ for(const r of sl38Rows){
+  const date=String(r['Time (UTC)']||'').slice(0,10),action=String(r.Action||''),ticker=String(r.Ticker||'').trim().toUpperCase();
+  actions[action]=(actions[action]||0)+1;if(/^\d{4}-\d{2}-\d{2}$/.test(date))dates.push(date);else issues.push({type:'invalid_date',date,action,ticker,id:r.ID||null});
+  if(r['Currency (Total)'])currencies.add(r['Currency (Total)']);
+  if(!/\b(buy|sell)\b/i.test(action))continue;
+  const qty=Number(r['No. of shares']);
+  if(!ticker||!Number.isFinite(qty)||qty<=0){issues.push({type:'invalid_trade',date,action,ticker,quantity:r['No. of shares'],id:r.ID||null});continue}
+  const signed=/\bbuy\b/i.test(action)?qty:-qty;
+  positions.set(ticker,(positions.get(ticker)||0)+signed);
+  if(!trades.has(ticker))trades.set(ticker,[]);
+  trades.get(ticker).push({date,action,quantity:qty,signedQuantity:signed,id:r.ID||null,isin:r.ISIN||null});
+ }
+ const current=new Set(sl39Symbols),tolerance=0.000001;
+ const exceptions=[...positions].filter(([ticker,quantity])=>!current.has(ticker)&&Math.abs(quantity)>tolerance).sort((a,b)=>a[0].localeCompare(b[0]));
+ const known=[...positions].filter(([ticker])=>current.has(ticker)).sort((a,b)=>a[0].localeCompare(b[0]));
+ const sorted=[...new Set(dates)].sort(),first=sorted[0]||null,last=sorted.at(-1)||null;
+ const gaps=[];for(let i=1;i<sorted.length;i++){const delta=Math.round((Date.parse(sorted[i]+'T00:00:00Z')-Date.parse(sorted[i-1]+'T00:00:00Z'))/86400000);if(delta>90)gaps.push({from:sorted[i-1],to:sorted[i],days:delta})}
+ const missingKnown=sl39Symbols.filter(x=>!positions.has(x));
+ sl42IntegrityLast={format:'stocklens-v42-integrity-report',generatedAt:new Date().toISOString(),recordCount:sl38Rows.length,firstDate:first,lastDate:last,actionCounts:actions,currencies:[...currencies].sort(),reconstructedKnownPositions:Object.fromEntries(known),unexplainedPositions:exceptions.map(([ticker,quantity])=>({ticker,netQuantity:quantity,transactions:trades.get(ticker)||[]})),invalidRecords:issues,activityGapsOver90Days:gaps,missingKnownSymbols:missingKnown,limitations:['No broker corporate-action feed','Inactivity gaps are not proof of missing records','Known positions are not independently matched to broker quantities','Opening balance and account inception are unverified']};
+ const table=(arr)=>`<div class="scroll"><table class="sl42-table"><thead><tr><th>Ticker</th><th>Net shares</th><th>Trade records</th></tr></thead><tbody>${arr.map(([ticker,quantity])=>`<tr><td>${safe(ticker)}</td><td>${sl42N(quantity)}</td><td>${(trades.get(ticker)||[]).length}</td></tr>`).join('')}</tbody></table></div>`;
+ el.innerHTML=`<div class="sl39-grid"><div class="sl39-kpi"><span>Imported records</span><b>${sl38Rows.length.toLocaleString('en-GB')}</b></div><div class="sl39-kpi"><span>Unexplained nonzero tickers</span><b>${exceptions.length}</b></div><div class="sl39-kpi"><span>Invalid trade/date records</span><b>${issues.length}</b></div><div class="sl39-kpi"><span>Activity gaps over 90 days</span><b>${gaps.length}</b></div></div><h3 style="margin-top:18px">Reconstructed current tickers</h3>${table(known)}<h3 style="margin-top:18px">Unexplained historical tickers</h3>${exceptions.length?exceptions.map(([ticker,quantity])=>`<div class="sl42-exception"><h3>${safe(ticker)} <span class="sl42-badge">Review required</span></h3><p class="sl42-muted">Net ${sl42N(quantity)} shares from ${(trades.get(ticker)||[]).length} recorded buy/sell transaction(s). This may reflect incomplete exports, ticker changes, transfers, corporate actions or broker adjustments.</p><div class="scroll"><table class="sl42-table"><thead><tr><th>Date</th><th>Action</th><th>Shares</th><th>ISIN</th></tr></thead><tbody>${(trades.get(ticker)||[]).map(x=>`<tr><td>${safe(x.date)}</td><td>${safe(x.action)}</td><td>${sl42N(x.signedQuantity)}</td><td>${safe(x.isin||'—')}</td></tr>`).join('')}</tbody></table></div></div>`).join(''):'<p class="sl42-muted">No unexplained nonzero positions above tolerance.</p>'}<h3>Coverage checks</h3><p class="sl42-muted">Imported activity dates: ${safe(first||'Unknown')} to ${safe(last||'Unknown')}. ${gaps.length} intervals longer than 90 days between recorded activity dates. These may simply be periods without transactions.</p>${gaps.length?`<div class="scroll"><table class="sl42-table"><thead><tr><th>Previous activity</th><th>Next activity</th><th>Days</th></tr></thead><tbody>${gaps.map(g=>`<tr><td>${safe(g.from)}</td><td>${safe(g.to)}</td><td>${g.days}</td></tr>`).join('')}</tbody></table></div>`:''}${issues.length?`<div class="notice">${issues.length} invalid date/trade record(s) found. See exported JSON for record IDs.</div>`:''}<p class="sl42-muted">Not checked: broker corporate actions, unrecorded opening holdings, and whether CSV history is complete. The current five ticker quantities still require broker-statement confirmation. The lifetime performance audit remains provisional.</p>`;
+ $('sl42IntegrityExport').disabled=false;
+}
+$('sl42IntegrityRun').onclick=sl42IntegrityAudit;
+$('sl42IntegrityExport').onclick=()=>{if(!sl42IntegrityLast)return;const blob=new Blob([JSON.stringify(sl42IntegrityLast,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='stocklens-v4.2-integrity-report.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+const sl42OldImport=$('sl38Files').onchange; // Existing listener remains in place; diagnostics are manually refreshed.
+document.title='StockLens v4.2 | Portfolio Data Integrity';const sl42Footer=document.querySelector('.foot');if(sl42Footer)sl42Footer.textContent='StockLens v4.2 · Read-only portfolio integrity diagnostics · Provisional performance data · Not financial advice.';
+</script></body></html>
