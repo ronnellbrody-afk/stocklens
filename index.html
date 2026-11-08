@@ -1546,6 +1546,42 @@ $51('sl51Fetch').onclick=async()=>{if(busy)return;busy=true;$51('sl51Fetch').dis
 $51('sl51Clear').onclick=()=>{if(!confirm('Clear only v5.1 staged quotes and FX? Existing StockLens data will remain unchanged.'))return;staged={};persist();render();setMsg('Quote staging cleared.')};
 $51('sl51Export').onclick=()=>{const payload={version:'5.2-hybrid-staging',exportedAt:new Date().toISOString(),brokerSnapshotDate:baseline.date,quotes:staged.quotes||{},fx:staged.fx||null,notes:'Quotes are unverified staging inputs; cash and holdings from dated broker records. Do not treat as a live account statement.'};const a=document.createElement('a'),url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));a.href=url;a.download='stocklens-v52-quote-report.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1500)};
 tab.onclick=()=>{document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('active',b===tab));document.querySelectorAll('.page').forEach(p=>p.classList.toggle('hidden',p!==page));render()};render();document.title='StockLens v5.2 | Hybrid Portfolio Integration';
+
+const fxAutoBtn = document.createElement('button');
+fxAutoBtn.className = 'btn';
+fxAutoBtn.textContent = 'Fetch USD/GBP FX';
+$51('sl51FxSave').after(fxAutoBtn);
+
+fxAutoBtn.onclick = async () => {
+  fxAutoBtn.disabled = true;
+  setMsg('Fetching USD/GBP exchange rate...');
+  try {
+    const response = await fetch('https://stocklens-fx.ronnell-d61.workers.dev/?type=fx');
+    if (!response.ok) throw new Error('FX service unavailable');
+    const data = await response.json();
+    const rate = Number(data.rate);
+    const timestamp = Number(data.providerTimestamp);
+    if (data.pair !== 'USD/GBP' ||
+        !Number.isFinite(rate) || rate <= 0 || rate >= 2 ||
+        !Number.isFinite(timestamp) || timestamp <= 0 ||
+        timestamp * 1000 > Date.now() + 300000 ||
+        Date.now() - timestamp * 1000 > 96 * 3600000) {
+      throw new Error('Invalid or stale FX rate');
+    }
+    staged.fx = {
+      rate,
+      at: new Date(timestamp * 1000).toISOString(),
+      source: 'Twelve Data'
+    };
+    persist();
+    render();
+    setMsg('USD/GBP rate saved: ' + rate.toFixed(5));
+  } catch (error) {
+    setMsg('FX fetch failed: ' + error.message);
+  } finally {
+    fxAutoBtn.disabled = false;
+  }
+};
 })();
 </script>
 </body></html>
